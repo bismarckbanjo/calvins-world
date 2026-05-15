@@ -1,0 +1,1470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Black Ball Platformer</title>
+<style>
+  :root {
+    --bg1: #dff3ff;
+    --bg2: #f7fbff;
+    --ink: #101010;
+    --platform: #273447;
+    --platformTop: #56687f;
+    --accent: #111827;
+    --ui: rgba(17, 24, 39, 0.24);
+    --ui2: rgba(17, 24, 39, 0.42);
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #111827;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+
+  #wrap {
+    position: fixed;
+    inset: 0;
+    background: linear-gradient(180deg, var(--bg1), var(--bg2));
+    overflow: hidden;
+  }
+
+  canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    image-rendering: auto;
+  }
+
+  .hud {
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    color: #111827;
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: .02em;
+    text-shadow: 0 1px 0 rgba(255,255,255,.65);
+    pointer-events: none;
+  }
+
+  .help {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    color: rgba(17,24,39,.72);
+    font-weight: 700;
+    font-size: 12px;
+    text-align: right;
+    line-height: 1.35;
+    pointer-events: none;
+  }
+
+  .touch-ui {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .rocker {
+    position: absolute;
+    left: 22px;
+    bottom: 22px;
+    width: min(36vw, 190px);
+    height: min(25vh, 120px);
+    border-radius: 999px;
+    background: var(--ui);
+    border: 2px solid rgba(255,255,255,.36);
+    box-shadow: inset 0 0 20px rgba(255,255,255,.15), 0 10px 30px rgba(0,0,0,.15);
+    overflow: hidden;
+    pointer-events: auto;
+    backdrop-filter: blur(4px);
+  }
+
+  .rocker::before {
+    content: "";
+    position: absolute;
+    top: 12%;
+    bottom: 12%;
+    left: 50%;
+    width: 2px;
+    background: rgba(255,255,255,.35);
+  }
+
+  .rocker span {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255,255,255,.75);
+    font-size: 30px;
+    font-weight: 900;
+  }
+
+  .rocker .left { left: 25%; }
+  .rocker .right { right: 25%; }
+
+  .buttons {
+    position: absolute;
+    right: 22px;
+    bottom: 22px;
+    display: flex;
+    gap: 14px;
+    pointer-events: auto;
+  }
+
+  .btn {
+    width: min(19vw, 88px);
+    height: min(19vw, 88px);
+    max-height: 96px;
+    border-radius: 999px;
+    border: 2px solid rgba(255,255,255,.38);
+    background: var(--ui);
+    color: rgba(255,255,255,.82);
+    font-size: 13px;
+    font-weight: 900;
+    letter-spacing: .08em;
+    display: grid;
+    place-items: center;
+    box-shadow: inset 0 0 20px rgba(255,255,255,.15), 0 10px 30px rgba(0,0,0,.15);
+    backdrop-filter: blur(4px);
+  }
+
+  .btn.active, .rocker.active {
+    background: var(--ui2);
+    transform: scale(.98);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .touch-ui { opacity: .28; }
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+
+  .card {
+    width: min(580px, calc(100vw - 32px));
+    padding: 26px;
+    border-radius: 28px;
+    background: rgba(255,255,255,.78);
+    box-shadow: 0 22px 80px rgba(15,23,42,.22);
+    text-align: center;
+    color: #111827;
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,.75);
+  }
+
+  .card h1 {
+    margin: 0 0 10px;
+    font-size: clamp(28px, 6vw, 54px);
+    letter-spacing: -.05em;
+  }
+
+  .card p {
+    margin: 8px 0;
+    color: rgba(17,24,39,.72);
+    font-weight: 650;
+  }
+
+  .card strong {
+    color: #111827;
+  }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div class="hud" id="hud">Distance: 0m · Jumps: 0/2</div>
+  <div class="help">Keyboard: A/D or ←/→ · Space/W/↑ jump · S/↓ + move slide<br>Mobile: rocker + jump/slide buttons</div>
+
+  <div class="touch-ui">
+    <div class="rocker" id="rocker">
+      <span class="left">‹</span>
+      <span class="right">›</span>
+    </div>
+    <div class="buttons">
+      <div class="btn" id="jumpBtn">JUMP</div>
+      <div class="btn" id="slideBtn">SLIDE</div>
+      <div class="btn" id="resetBtn">RESET</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="card">
+      <h1>Calvin Hop</h1>
+      <p>A tiny Calvin platformer focused on jump feel.</p>
+      <p><strong>Tap / press jump</strong> for a short hop, hold for a full jump, and jump again in the air for a double-jump.</p>
+      <p>Blue platforms move. Purple cracked platforms crumble after you touch them. Calvin now uses separate standing/running legs plus a stretched airborne leg sprite.</p>
+      <p>Press jump, tap the screen, or hit Space to start.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const calvinBodyImg = new Image();
+  calvinBodyImg.src = "data:image/png;base64,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";
+
+  const calvinLegsImg = new Image();
+  calvinLegsImg.src = "data:image/png;base64,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";
+
+  const calvinJumpLegsImg = new Image();
+  calvinJumpLegsImg.src = "data:image/png;base64,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";
+
+  const hud = document.getElementById("hud");
+  const overlay = document.getElementById("overlay");
+  const rocker = document.getElementById("rocker");
+  const jumpBtn = document.getElementById("jumpBtn");
+  const slideBtn = document.getElementById("slideBtn");
+  const resetBtn = document.getElementById("resetBtn");
+
+  const WORLD = { w: 5200, h: 760 };
+  const GRAVITY = 2300;
+  const MAX_FALL = 1800;
+
+  const TUNING = {
+    groundAccel: 11925,
+    airAccel: 2700,
+    groundFriction: 0.84,
+    airDrag: 0.94,
+    jumpCarrySpeedCap: 470,
+    jumpHorizontalDamping: 0.82,
+    maxRun: 968,
+
+    // Momentum layer: current speed stays the baseline.
+    // Hold one direction for 2+ seconds to gradually unlock a faster top speed.
+    momentumDelay: 2.0,
+    momentumRampTime: 1.4,
+    momentumMaxBonus: 417,
+    momentumAccelBoost: 1.45,
+
+    // Jump distance should mostly come from speed already earned while running,
+    // not from a sudden mid-air shove.
+    airMomentumControlPenalty: 0.42,
+
+    coyote: 0.115,
+    jumpBuffer: 0.13,
+
+    // Hard-coded jump strengths.
+    smallJumpVy: -610,
+    fullJumpVy: -825,
+    doubleJumpVy: -760,
+
+    // Air paddle: a little extra steering kick when double-jumping.
+    doubleJumpHorizontalKick: 25,
+
+    // Hold jump to stretch a jump upward; release early to cut it short.
+    jumpHoldGravityScale: 0.52,
+
+    // Apex gravity scaling: softens gravity near the top of the jump
+    // for a touch of hang time and more precise landings.
+    apexVelocityWindow: 135,
+    apexGravityScale: 0.58,
+
+    jumpCutMultiplier: 0.48,
+    maxJumpHold: 0.16,
+
+    // Ledge grab: forgiving enough to feel helpful, but not so wide that it
+    // steals normal landings.
+    ledgeGrabX: 24,
+    ledgeGrabY: 34,
+    ledgeHangOffsetX: 17,
+    ledgeHangOffsetY: 20,
+    ledgeClimbTime: 0.24,
+
+    // Slide: useful for low gaps and for preserving/increasing momentum.
+    slideDuration: 0.58,
+    slideCooldown: 0.12,
+    slideRadiusY: 14,
+    slideBoost: 235,
+    slideFriction: 0.988,
+    slideMinSpeed: 520
+  };
+
+  const platforms = [
+    makePlatform(0, 650, 520, 80),
+    makePlatform(620, 585, 260, 42),
+    makeMovingPlatform(980, 510, 240, 42, 980, 1220, 510, 510, 2.8),
+    makePlatform(1350, 585, 320, 42),
+    makeCrumblePlatform(1790, 500, 220, 42, 0.55, 2.4),
+    makeMovingPlatform(2130, 430, 220, 42, 2130, 2130, 430, 565, 2.4),
+    makePlatform(2470, 540, 360, 42),
+    makeCrumblePlatform(2990, 470, 220, 42, 0.65, 2.7),
+    makeMovingPlatform(3300, 390, 220, 42, 3300, 3550, 390, 455, 3.2),
+    makePlatform(3620, 500, 340, 42),
+    makeCrumblePlatform(4100, 430, 260, 42, 0.7, 2.5),
+    makePlatform(4520, 560, 600, 80)
+  ];
+
+  const goal = { x: 4920, y: 478, w: 54, h: 82 };
+  function makePlatform(x, y, w, h) {
+    return {
+      type: "static",
+      x, y, w, h,
+      baseX: x,
+      baseY: y,
+      prevX: x,
+      prevY: y,
+      dx: 0,
+      dy: 0,
+      active: true
+    };
+  }
+
+  function makeMovingPlatform(x, y, w, h, x1, x2, y1, y2, duration) {
+    return {
+      ...makePlatform(x, y, w, h),
+      type: "moving",
+      path: { x1, x2, y1, y2, duration },
+      t: 0
+    };
+  }
+
+  function makeCrumblePlatform(x, y, w, h, crumbleDelay = 0.65, respawnDelay = 2.6) {
+    return {
+      ...makePlatform(x, y, w, h),
+      type: "crumble",
+      touched: false,
+      crumbleTimer: 0,
+      respawnTimer: 0,
+      crumbleDelay,
+      respawnDelay,
+      dropY: 0
+    };
+  }
+
+
+  let DPR = 1, W = 0, H = 0, scale = 1;
+  let cameraX = 0, cameraY = 0;
+  let last = 0;
+  let state = "title";
+
+  const input = {
+    left: false,
+    right: false,
+    jump: false,
+    jumpPressed: false,
+    jumpReleased: false,
+    down: false,
+    slide: false,
+    slidePressed: false,
+    move: 0,
+    pointerMoveId: null,
+    pointerJumpId: null
+  };
+
+  const player = {
+    x: 110,
+    y: 540,
+    vx: 0,
+    vy: 0,
+    r: 24,
+    grounded: false,
+    wasGrounded: false,
+    coyoteTimer: 0,
+    jumpBufferTimer: 0,
+    jumpsUsed: 0,
+    jumpHoldTimer: 0,
+    holdingJump: false,
+    facing: 1,
+    runTime: 0,
+    squash: 0,
+    blink: 0,
+    heldDirection: 0,
+    heldDirectionTime: 0,
+    momentum: 0,
+    ledgeGrabbed: false,
+    ledgePlatform: null,
+    ledgeSide: 0,
+    ledgeClimbTimer: 0,
+    ledgeClimbFromX: 0,
+    ledgeClimbFromY: 0,
+    ledgeClimbToX: 0,
+    ledgeClimbToY: 0,
+    sliding: false,
+    slideTimer: 0,
+    slideCooldown: 0,
+    slideDir: 1
+  };
+
+  function resize() {
+    DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+    W = Math.floor(window.innerWidth);
+    H = Math.floor(window.innerHeight);
+    canvas.width = Math.floor(W * DPR);
+    canvas.height = Math.floor(H * DPR);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    scale = Math.min(W / 960, H / 540);
+  }
+
+  function reset() {
+    Object.assign(player, {
+      x: 110, y: 540, vx: 0, vy: 0,
+      grounded: false, wasGrounded: false,
+      coyoteTimer: 0, jumpBufferTimer: 0,
+      jumpsUsed: 0, jumpHoldTimer: 0,
+      holdingJump: false, facing: 1, runTime: 0,
+      squash: 0, blink: 0
+    });
+    resetPlatforms();
+    cameraX = 0;
+    cameraY = 0;
+    state = "play";
+    overlay.classList.add("hidden");
+  }
+
+  function win() {
+    state = "win";
+    overlay.innerHTML = `<div class="card"><h1>Nice hops.</h1><p>You reached the final platform.</p><p>Press reset or Space to play again.</p></div>`;
+    overlay.classList.remove("hidden");
+  }
+
+  function die() {
+    state = "dead";
+    overlay.innerHTML = `<div class="card"><h1>Oof.</h1><p>The little black ball fell into the clouds.</p><p>Press reset or Space to try again.</p></div>`;
+    overlay.classList.remove("hidden");
+  }
+
+  function consumeJumpPress() {
+    input.jumpPressed = false;
+    player.jumpBufferTimer = TUNING.jumpBuffer;
+    if (state !== "play") reset();
+  }
+
+  function pressJump() {
+    if (!input.jump) {
+      input.jumpPressed = true;
+    }
+    input.jump = true;
+  }
+
+  function releaseJump() {
+    if (input.jump) {
+      input.jumpReleased = true;
+    }
+    input.jump = false;
+  }
+
+  function pressSlide() {
+    if (!input.slide) {
+      input.slidePressed = true;
+    }
+    input.slide = true;
+  }
+
+  function releaseSlide() {
+    input.slide = false;
+  }
+
+  function setMoveFromBooleans() {
+    input.move = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+  }
+
+  window.addEventListener("resize", resize);
+
+  window.addEventListener("keydown", e => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "KeyA", "KeyD", "KeyW", "KeyS", "KeyR", "ShiftLeft", "ShiftRight"].includes(e.code)) e.preventDefault();
+    if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = true;
+    if (e.code === "ArrowRight" || e.code === "KeyD") input.right = true;
+    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") pressJump();
+    if (e.code === "ArrowDown" || e.code === "KeyS") input.down = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") pressSlide();
+    if (e.code === "KeyR") reset();
+    setMoveFromBooleans();
+  }, {passive:false});
+
+  window.addEventListener("keyup", e => {
+    if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = false;
+    if (e.code === "ArrowRight" || e.code === "KeyD") input.right = false;
+    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") releaseJump();
+    if (e.code === "ArrowDown" || e.code === "KeyS") input.down = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") releaseSlide();
+    setMoveFromBooleans();
+  });
+
+  function bindPointerButton(el, down, up) {
+    el.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      el.classList.add("active");
+      down(e);
+    }, {passive:false});
+    el.addEventListener("pointerup", e => {
+      e.preventDefault();
+      el.classList.remove("active");
+      up(e);
+    }, {passive:false});
+    el.addEventListener("pointercancel", e => {
+      el.classList.remove("active");
+      up(e);
+    });
+  }
+
+  rocker.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    input.pointerMoveId = e.pointerId;
+    rocker.setPointerCapture(e.pointerId);
+    rocker.classList.add("active");
+    updateRocker(e);
+  }, {passive:false});
+
+  rocker.addEventListener("pointermove", e => {
+    if (e.pointerId === input.pointerMoveId) updateRocker(e);
+  });
+
+  function updateRocker(e) {
+    const rect = rocker.getBoundingClientRect();
+    const mid = rect.left + rect.width / 2;
+    input.left = e.clientX < mid;
+    input.right = e.clientX >= mid;
+    setMoveFromBooleans();
+  }
+
+  function clearRocker(e) {
+    if (e.pointerId !== input.pointerMoveId) return;
+    input.pointerMoveId = null;
+    input.left = false;
+    input.right = false;
+    input.move = 0;
+    rocker.classList.remove("active");
+  }
+
+  rocker.addEventListener("pointerup", clearRocker);
+  rocker.addEventListener("pointercancel", clearRocker);
+
+  bindPointerButton(jumpBtn, () => pressJump(), () => releaseJump());
+  bindPointerButton(slideBtn, () => pressSlide(), () => releaseSlide());
+  bindPointerButton(resetBtn, () => reset(), () => {});
+
+  canvas.addEventListener("pointerdown", e => {
+    if (state !== "play") {
+      e.preventDefault();
+      reset();
+    }
+  }, {passive:false});
+
+  function playerRadiusY() {
+    return player.sliding ? TUNING.slideRadiusY : player.r;
+  }
+
+  function rectCircleCollision(cx, cy, r, rect) {
+    const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+    const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+    const dx = cx - closestX;
+    const dy = cy - closestY;
+    return dx * dx + dy * dy <= r * r;
+  }
+
+  function update(dt) {
+    if (input.jumpPressed) consumeJumpPress();
+
+    if (state !== "play") {
+      input.jumpPressed = false;
+      input.jumpReleased = false;
+    input.slidePressed = false;
+      return;
+    }
+
+    dt = Math.min(dt, 1 / 30);
+
+    if (player.ledgeClimbTimer > 0) {
+      player.ledgeClimbTimer -= dt;
+      const t = 1 - Math.max(0, player.ledgeClimbTimer / TUNING.ledgeClimbTime);
+      const eased = 1 - Math.pow(1 - t, 3);
+      player.x = player.ledgeClimbFromX + (player.ledgeClimbToX - player.ledgeClimbFromX) * eased;
+      player.y = player.ledgeClimbFromY + (player.ledgeClimbToY - player.ledgeClimbFromY) * eased;
+      player.vx = 0;
+      player.vy = 0;
+      player.grounded = true;
+      player.wasGrounded = true;
+      player.coyoteTimer = TUNING.coyote;
+      player.jumpsUsed = 0;
+      input.jumpPressed = false;
+      input.jumpReleased = false;
+    input.slidePressed = false;
+      updatePuffs(dt);
+      cameraFollow(dt);
+      hud.textContent = `Distance: ${Math.max(0, Math.floor(player.x / 10))}m · Jumps: ${player.jumpsUsed}/2 · Climbing`;
+      return;
+    }
+
+    if (player.ledgeGrabbed) {
+      handleLedgeHang(dt);
+      updatePuffs(dt);
+      cameraFollow(dt);
+      hud.textContent = `Distance: ${Math.max(0, Math.floor(player.x / 10))}m · Jumps: ${player.jumpsUsed}/2 · Ledge`;
+      input.jumpPressed = false;
+      input.jumpReleased = false;
+    input.slidePressed = false;
+      return;
+    }
+
+    updatePlatforms(dt);
+
+    player.wasGrounded = player.grounded;
+    player.grounded = false;
+
+    if (player.jumpBufferTimer > 0) player.jumpBufferTimer -= dt;
+    if (player.coyoteTimer > 0) player.coyoteTimer -= dt;
+
+    const desired = input.move;
+    if (desired !== 0) player.facing = desired;
+
+    // Momentum: the original maxRun remains the normal running speed.
+    // Staying committed to one direction for 2 seconds slowly opens up extra speed.
+    if (desired !== 0) {
+      if (desired === player.heldDirection) {
+        player.heldDirectionTime += dt;
+      } else {
+        player.heldDirection = desired;
+        player.heldDirectionTime = 0;
+        player.momentum = 0;
+      }
+    } else {
+      player.heldDirection = 0;
+      player.heldDirectionTime = 0;
+      player.momentum = Math.max(0, player.momentum - dt * 1.85);
+    }
+
+    const momentumTarget = desired !== 0 && player.heldDirectionTime > TUNING.momentumDelay
+      ? Math.min(1, (player.heldDirectionTime - TUNING.momentumDelay) / TUNING.momentumRampTime)
+      : 0;
+
+    const momentumEase = 1 - Math.pow(0.001, dt);
+    player.momentum += (momentumTarget - player.momentum) * momentumEase;
+
+    // Momentum directly affects run speed while grounded.
+    // In the air, the player keeps the speed they earned, but cannot easily create
+    // new momentum from nothing.
+    const activeMaxRun = TUNING.maxRun + TUNING.momentumMaxBonus * player.momentum;
+    const groundAccel = TUNING.groundAccel * (1 + (TUNING.momentumAccelBoost - 1) * player.momentum);
+    const airAccel = TUNING.airAccel * (1 - TUNING.airMomentumControlPenalty * player.momentum);
+    const accel = player.wasGrounded ? groundAccel : airAccel;
+
+    player.vx += desired * accel * dt;
+
+    if (desired === 0) {
+      player.vx *= player.wasGrounded ? Math.pow(TUNING.groundFriction, dt * 60) : Math.pow(TUNING.airDrag, dt * 60);
+      if (Math.abs(player.vx) < 5) player.vx = 0;
+    }
+
+    // Grounded running clamps tightly to the current momentum speed.
+    // Airborne movement is allowed a little over baseline so jump distance reflects
+    // earned run speed, but it will not catapult forward from air steering alone.
+    const clampSpeed = player.wasGrounded ? activeMaxRun : TUNING.jumpCarrySpeedCap;
+    player.vx = Math.max(-clampSpeed, Math.min(clampSpeed, player.vx));
+
+    if (player.slideCooldown > 0) player.slideCooldown -= dt;
+
+    const wantsSlide = input.slidePressed || (input.down && desired !== 0);
+    if (wantsSlide && player.wasGrounded && !player.sliding && player.slideCooldown <= 0) {
+      beginSlide(desired || player.facing);
+    }
+
+    if (player.sliding) {
+      updateSlide(dt);
+    }
+
+    const canCoyoteJump = player.coyoteTimer > 0;
+    const canDoubleJump = player.jumpsUsed < 2 && !canCoyoteJump;
+
+    if (player.jumpBufferTimer > 0 && player.sliding) {
+      player.sliding = false;
+      player.slideTimer = 0;
+    }
+
+    if (player.jumpBufferTimer > 0 && (canCoyoteJump || canDoubleJump)) {
+      const isDouble = !canCoyoteJump;
+      player.jumpBufferTimer = 0;
+      player.grounded = false;
+      player.coyoteTimer = 0;
+      player.holdingJump = true;
+      player.jumpHoldTimer = TUNING.maxJumpHold;
+
+      if (isDouble) {
+        player.vy = TUNING.doubleJumpVy;
+        player.vx = Math.max(-TUNING.jumpCarrySpeedCap, Math.min(TUNING.jumpCarrySpeedCap, player.vx * TUNING.jumpHorizontalDamping));
+        player.vx += input.move * TUNING.doubleJumpHorizontalKick;
+        player.jumpsUsed = 2;
+        spawnPuff(player.x, player.y + player.r * 0.6, true);
+      } else {
+        player.vy = TUNING.fullJumpVy;
+        player.vx = Math.max(-TUNING.jumpCarrySpeedCap, Math.min(TUNING.jumpCarrySpeedCap, player.vx * TUNING.jumpHorizontalDamping));
+        player.jumpsUsed = 1;
+        spawnPuff(player.x, player.y + player.r, false);
+      }
+
+      player.squash = -0.22;
+    }
+
+    // Jump release converts full jump into small jump.
+    if (input.jumpReleased && player.vy < 0) {
+      player.vy *= TUNING.jumpCutMultiplier;
+      player.holdingJump = false;
+      player.jumpHoldTimer = 0;
+    }
+
+    let gravityScale = 1;
+
+    if (input.jump && player.holdingJump && player.jumpHoldTimer > 0 && player.vy < 0) {
+      gravityScale = TUNING.jumpHoldGravityScale;
+      player.jumpHoldTimer -= dt;
+    } else {
+      player.holdingJump = false;
+    }
+
+    // Apply apex hang only while airborne and near the top of the arc.
+    // This is intentionally separate from jump-hold so short hops still work.
+    if (!player.grounded && Math.abs(player.vy) < TUNING.apexVelocityWindow) {
+      gravityScale = Math.min(gravityScale, TUNING.apexGravityScale);
+    }
+
+    player.vy += GRAVITY * gravityScale * dt;
+    player.vy = Math.min(player.vy, MAX_FALL);
+
+    // Horizontal movement and wall-ish platform side response.
+    player.x += player.vx * dt;
+    for (const p of platforms) {
+      if (playerPlatformCollision(p)) {
+        const leftPen = (player.x + player.r) - p.x;
+        const rightPen = (p.x + p.w) - (player.x - player.r);
+        const rY = playerRadiusY();
+        const topPen = (player.y + rY) - p.y;
+        const bottomPen = (p.y + p.h) - (player.y - rY);
+        const minPen = Math.min(leftPen, rightPen, topPen, bottomPen);
+        if (minPen === leftPen) player.x = p.x - player.r;
+        else if (minPen === rightPen) player.x = p.x + p.w + player.r;
+        player.vx = 0;
+      }
+    }
+
+    // Vertical movement and landing.
+    player.y += player.vy * dt;
+    for (const p of platforms) {
+      if (playerPlatformCollision(p)) {
+        const rY = playerRadiusY();
+        const previousBottom = player.y - player.vy * dt + rY;
+        if (player.vy >= 0 && previousBottom <= p.y + 12) {
+          player.y = p.y - rY;
+          player.x += p.dx;
+          player.y += p.dy;
+          player.vy = 0;
+          player.grounded = true;
+          player.coyoteTimer = TUNING.coyote;
+          player.jumpsUsed = 0;
+          player.holdingJump = false;
+          player.jumpHoldTimer = 0;
+          touchCrumblePlatform(p);
+          if (!player.wasGrounded) {
+            player.squash = 0.26;
+            spawnPuff(player.x, player.y + player.r, false);
+          }
+        } else if (player.vy < 0) {
+          player.y = p.y + p.h + rY;
+          player.vy = 0;
+          player.holdingJump = false;
+        }
+      }
+    }
+
+    if (!player.grounded && player.vy >= 0) {
+      tryLedgeGrab();
+    }
+
+    if (player.grounded) {
+      player.coyoteTimer = TUNING.coyote;
+    }
+
+    player.runTime += Math.abs(player.vx) * dt / 90;
+    player.squash *= Math.pow(0.05, dt);
+    player.blink += dt;
+
+    updatePuffs(dt);
+
+    cameraFollow(dt);
+
+    if (player.y > WORLD.h + 220) die();
+
+    if (player.x > goal.x && player.x < goal.x + goal.w && player.y + player.r > goal.y && player.y - player.r < goal.y + goal.h) {
+      win();
+    }
+
+    const momentumText = player.momentum > 0.05 ? ` · Momentum: ${Math.round(player.momentum * 100)}%` : "";
+    const slideText = player.sliding ? " · Sliding" : "";
+    hud.textContent = `Distance: ${Math.max(0, Math.floor(player.x / 10))}m · Jumps: ${player.jumpsUsed}/2${momentumText}${slideText}`;
+    input.jumpPressed = false;
+    input.jumpReleased = false;
+    input.slidePressed = false;
+  }
+
+  const puffs = [];
+  function spawnPuff(x, y, big) {
+    for (let i = 0; i < (big ? 18 : 10); i++) {
+      puffs.push({
+        x, y,
+        vx: (Math.random() * 2 - 1) * (big ? 170 : 100),
+        vy: -Math.random() * (big ? 150 : 90),
+        r: 4 + Math.random() * (big ? 8 : 5),
+        life: 0.35 + Math.random() * 0.25,
+        max: 0.6
+      });
+    }
+  }
+
+  function rectEllipseCollision(cx, cy, rx, ry, rect) {
+    const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+    const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+    const dx = (cx - closestX) / rx;
+    const dy = (cy - closestY) / ry;
+    return dx * dx + dy * dy <= 1;
+  }
+
+  function playerPlatformCollision(platform) {
+    if (!platform.active) return false;
+    if (player.sliding) {
+      return rectEllipseCollision(player.x, player.y, player.r, TUNING.slideRadiusY, platform);
+    }
+    return rectCircleCollision(player.x, player.y, player.r, platform);
+  }
+
+  function beginSlide(dir) {
+    player.sliding = true;
+    player.slideTimer = TUNING.slideDuration;
+    player.slideCooldown = TUNING.slideCooldown;
+    player.slideDir = dir || player.facing || 1;
+    player.facing = player.slideDir;
+
+    const speed = Math.abs(player.vx);
+    const boosted = Math.max(speed + TUNING.slideBoost, TUNING.slideMinSpeed);
+    const maxSlideSpeed = TUNING.maxRun + TUNING.momentumMaxBonus + TUNING.slideBoost;
+    player.vx = player.slideDir * Math.min(boosted, maxSlideSpeed);
+    player.squash = 0.36;
+    spawnPuff(player.x - player.slideDir * player.r, player.y + player.r, false);
+  }
+
+  function updateSlide(dt) {
+    player.slideTimer -= dt;
+    player.vx *= Math.pow(TUNING.slideFriction, dt * 60);
+    player.facing = player.slideDir;
+
+    const shouldStop = player.slideTimer <= 0 || !player.grounded;
+    if (shouldStop) {
+      player.sliding = false;
+      player.slideTimer = 0;
+      return;
+    }
+
+    // Holding slide/down can extend the low profile slightly, but speed keeps bleeding off.
+    if ((input.slide || input.down) && Math.abs(player.vx) > TUNING.slideMinSpeed * 0.65) {
+      player.slideTimer = Math.max(player.slideTimer, 0.08);
+    }
+  }
+
+  function resetPlatforms() {
+    for (const p of platforms) {
+      p.x = p.baseX;
+      p.y = p.baseY;
+      p.prevX = p.x;
+      p.prevY = p.y;
+      p.dx = 0;
+      p.dy = 0;
+      p.active = true;
+
+      if (p.type === "moving") {
+        p.t = 0;
+      }
+
+      if (p.type === "crumble") {
+        p.touched = false;
+        p.crumbleTimer = 0;
+        p.respawnTimer = 0;
+        p.dropY = 0;
+      }
+    }
+  }
+
+  function updatePlatforms(dt) {
+    for (const p of platforms) {
+      p.prevX = p.x;
+      p.prevY = p.y;
+      p.dx = 0;
+      p.dy = 0;
+
+      if (p.type === "moving") {
+        p.t = (p.t + dt) % p.path.duration;
+        const phase = p.t / p.path.duration;
+        const wave = (1 - Math.cos(phase * Math.PI * 2)) / 2;
+        p.x = p.path.x1 + (p.path.x2 - p.path.x1) * wave;
+        p.y = p.path.y1 + (p.path.y2 - p.path.y1) * wave;
+      }
+
+      if (p.type === "crumble") {
+        if (p.touched && p.active) {
+          p.crumbleTimer -= dt;
+          if (p.crumbleTimer <= 0) {
+            p.active = false;
+            p.respawnTimer = p.respawnDelay;
+            spawnPuff(p.x + p.w / 2, p.y + p.h / 2, true);
+          }
+        } else if (!p.active) {
+          p.respawnTimer -= dt;
+          p.dropY += 520 * dt;
+          if (p.respawnTimer <= 0) {
+            p.active = true;
+            p.touched = false;
+            p.crumbleTimer = 0;
+            p.dropY = 0;
+            p.x = p.baseX;
+            p.y = p.baseY;
+            spawnPuff(p.x + p.w / 2, p.y + 6, false);
+          }
+        }
+      }
+
+      p.dx = p.x - p.prevX;
+      p.dy = p.y - p.prevY;
+    }
+  }
+
+  function touchCrumblePlatform(platform) {
+    if (platform.type !== "crumble" || platform.touched || !platform.active) return;
+    platform.touched = true;
+    platform.crumbleTimer = platform.crumbleDelay;
+  }
+
+  function cameraFollow(dt) {
+    const targetCamX = Math.max(0, Math.min(WORLD.w - W, player.x - W * 0.38));
+    cameraX += (targetCamX - cameraX) * (1 - Math.pow(0.001, dt));
+    cameraY += ((WORLD.h - H) - cameraY) * (1 - Math.pow(0.001, dt));
+    cameraY = Math.max(0, cameraY);
+  }
+
+  function tryLedgeGrab() {
+    if (player.ledgeGrabbed || player.ledgeClimbTimer > 0 || player.sliding) return;
+    if (player.vy < 80) return;
+
+    for (const p of platforms) {
+      if (!p.active) continue;
+      const rY = playerRadiusY();
+      const nearTop = player.y + rY > p.y - TUNING.ledgeGrabY &&
+                      player.y + rY < p.y + TUNING.ledgeGrabY;
+
+      if (!nearTop) continue;
+
+      const nearLeft = Math.abs((player.x + player.r) - p.x) < TUNING.ledgeGrabX;
+      const nearRight = Math.abs((player.x - player.r) - (p.x + p.w)) < TUNING.ledgeGrabX;
+
+      if (nearLeft && player.x < p.x) {
+        beginLedgeGrab(p, -1);
+        return;
+      }
+
+      if (nearRight && player.x > p.x + p.w) {
+        beginLedgeGrab(p, 1);
+        return;
+      }
+    }
+  }
+
+  function beginLedgeGrab(platform, side) {
+    player.ledgeGrabbed = true;
+    player.ledgePlatform = platform;
+    player.ledgeSide = side;
+    player.grounded = false;
+    player.wasGrounded = false;
+    player.vx = 0;
+    player.vy = 0;
+    player.holdingJump = false;
+    player.jumpHoldTimer = 0;
+    player.jumpsUsed = Math.min(player.jumpsUsed, 1);
+
+    // side -1 means hanging from the left ledge; side 1 from the right ledge.
+    if (side < 0) {
+      player.x = platform.x - player.r + TUNING.ledgeHangOffsetX;
+    } else {
+      player.x = platform.x + platform.w + player.r - TUNING.ledgeHangOffsetX;
+    }
+    player.y = platform.y + TUNING.ledgeHangOffsetY;
+
+    spawnPuff(player.x, player.y + player.r * 0.25, false);
+  }
+
+  function handleLedgeHang(dt) {
+    const p = player.ledgePlatform;
+    if (!p) {
+      player.ledgeGrabbed = false;
+      return;
+    }
+
+    player.vx = 0;
+    player.vy = 0;
+    player.grounded = false;
+    player.coyoteTimer = 0;
+
+    const pressingTowardPlatform =
+      (player.ledgeSide < 0 && input.move > 0) ||
+      (player.ledgeSide > 0 && input.move < 0);
+
+    if (pressingTowardPlatform || input.jumpPressed) {
+      beginLedgeClimb();
+      return;
+    }
+
+    // Press away to drop.
+    const pressingAway =
+      (player.ledgeSide < 0 && input.move < 0) ||
+      (player.ledgeSide > 0 && input.move > 0);
+
+    if (pressingAway && input.jumpReleased) {
+      player.ledgeGrabbed = false;
+      player.ledgePlatform = null;
+      player.ledgeSide = 0;
+      player.vy = 120;
+    }
+  }
+
+  function beginLedgeClimb() {
+    const p = player.ledgePlatform;
+    if (!p) return;
+
+    player.ledgeGrabbed = false;
+    player.ledgeClimbTimer = TUNING.ledgeClimbTime;
+    player.ledgeClimbFromX = player.x;
+    player.ledgeClimbFromY = player.y;
+
+    const targetX = player.ledgeSide < 0
+      ? p.x + player.r + 8
+      : p.x + p.w - player.r - 8;
+
+    player.ledgeClimbToX = targetX;
+    player.ledgeClimbToY = p.y - player.r;
+
+    player.ledgePlatform = null;
+    player.ledgeSide = 0;
+    player.squash = -0.12;
+    touchCrumblePlatform(p);
+  }
+
+  function updatePuffs(dt) {
+    for (let i = puffs.length - 1; i >= 0; i--) {
+      const p = puffs[i];
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy += 300 * dt;
+      if (p.life <= 0) puffs.splice(i, 1);
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    drawBackground();
+
+    ctx.save();
+    ctx.translate(-cameraX, -cameraY);
+
+    drawPlatforms();
+    drawGoal();
+    drawPuffs();
+    drawApexHangCue();
+    drawSlideDust();
+    drawPlayer();
+    drawMomentumLines();
+
+    ctx.restore();
+
+    if (state === "play") {
+      drawVignette();
+    }
+  }
+
+  function drawBackground() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#dff3ff");
+    g.addColorStop(0.55, "#f7fbff");
+    g.addColorStop(1, "#eaf6ee");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.globalAlpha = 0.38;
+    for (let i = 0; i < 14; i++) {
+      const x = ((i * 390 - cameraX * 0.22) % (W + 300)) - 160;
+      const y = 70 + (i % 5) * 58;
+      drawCloud(x, y, 0.75 + (i % 3) * 0.22);
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(-cameraX * 0.12, 0);
+    ctx.fillStyle = "rgba(39,52,71,.08)";
+    for (let i = -2; i < 20; i++) {
+      const x = i * 360;
+      ctx.beginPath();
+      ctx.moveTo(x, H);
+      ctx.lineTo(x + 170, H - 190);
+      ctx.lineTo(x + 370, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawCloud(x, y, s) {
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(x, y, 26*s, 0, Math.PI*2);
+    ctx.arc(x + 28*s, y - 10*s, 34*s, 0, Math.PI*2);
+    ctx.arc(x + 66*s, y, 28*s, 0, Math.PI*2);
+    ctx.arc(x + 42*s, y + 8*s, 30*s, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  function drawPlatforms() {
+    for (const p of platforms) {
+      if (!p.active && p.type !== "crumble") continue;
+
+      const drawY = p.y + (p.active ? 0 : p.dropY);
+      const alpha = p.active ? 1 : Math.max(0, p.respawnTimer / p.respawnDelay) * 0.35;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      if (p.type === "moving" && p.active) {
+        ctx.strokeStyle = "rgba(17,24,39,.16)";
+        ctx.lineWidth = 3;
+        ctx.setLineDash([12, 12]);
+        ctx.beginPath();
+        ctx.moveTo(p.path.x1 + p.w / 2, p.path.y1 + p.h / 2);
+        ctx.lineTo(p.path.x2 + p.w / 2, p.path.y2 + p.h / 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.fillStyle = "rgba(15,23,42,.14)";
+      roundRect(p.x + 9, drawY + 14, p.w, p.h, 18);
+      ctx.fill();
+
+      let body = "#273447";
+      let top = "#56687f";
+
+      if (p.type === "moving") {
+        body = "#263a4d";
+        top = "#78a0c4";
+      }
+
+      if (p.type === "crumble") {
+        const warning = p.touched ? Math.max(0, p.crumbleTimer / p.crumbleDelay) : 1;
+        body = p.touched ? "#5a3640" : "#3d3345";
+        top = p.touched ? "#d78686" : "#8d789f";
+        ctx.translate((Math.random() - 0.5) * (1 - warning) * 5, (Math.random() - 0.5) * (1 - warning) * 3);
+      }
+
+      ctx.fillStyle = body;
+      roundRect(p.x, drawY, p.w, p.h, 16);
+      ctx.fill();
+
+      ctx.fillStyle = top;
+      roundRect(p.x, drawY, p.w, 13, 13);
+      ctx.fill();
+
+      if (p.type === "crumble") {
+        ctx.strokeStyle = "rgba(255,255,255,.22)";
+        ctx.lineWidth = 2;
+        for (let x = p.x + 36; x < p.x + p.w - 30; x += 52) {
+          ctx.beginPath();
+          ctx.moveTo(x, drawY + 16);
+          ctx.lineTo(x + 20, drawY + 32);
+          ctx.stroke();
+        }
+      } else {
+        ctx.fillStyle = "rgba(255,255,255,.18)";
+        for (let x = p.x + 28; x < p.x + p.w - 20; x += 58) {
+          ctx.fillRect(x, drawY + 20, 22, 3);
+        }
+      }
+
+      ctx.restore();
+    }
+  }
+
+  function roundRect(x, y, w, h, r) {
+    const rr = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawGoal() {
+    ctx.save();
+    ctx.translate(goal.x, goal.y);
+    ctx.fillStyle = "rgba(17,24,39,.20)";
+    ctx.fillRect(22, 12, 8, goal.h);
+    ctx.fillStyle = "#111827";
+    ctx.fillRect(24, 0, 6, goal.h + 18);
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(30, 4);
+    ctx.lineTo(86, 20);
+    ctx.lineTo(30, 38);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPuffs() {
+    ctx.save();
+    for (const p of puffs) {
+      ctx.globalAlpha = Math.max(0, p.life / p.max) * 0.45;
+      ctx.fillStyle = "#111827";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawSlideDust() {
+    if (!player.sliding) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+
+    const dir = player.slideDir || player.facing;
+    for (let i = 0; i < 5; i++) {
+      const x = player.x - dir * (player.r + 8 + i * 13);
+      const y = player.y + TUNING.slideRadiusY + 8 + (i % 2) * 4;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - dir * (14 + i * 4), y + 1);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawApexHangCue() {
+    if (player.grounded || player.ledgeGrabbed || player.ledgeClimbTimer > 0) return;
+    if (Math.abs(player.vy) >= TUNING.apexVelocityWindow) return;
+
+    const strength = 1 - Math.abs(player.vy) / TUNING.apexVelocityWindow;
+
+    ctx.save();
+    ctx.globalAlpha = 0.08 + strength * 0.16;
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(player.x, player.y + player.r + 8, player.r * (0.9 + strength * 0.4), 5 + strength * 3, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawMomentumLines() {
+    if (!player.grounded || player.momentum < 0.18 || Math.abs(player.vx) < TUNING.maxRun * 0.85) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.18 + player.momentum * 0.18;
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+
+    const dir = Math.sign(player.vx) || player.facing;
+    const baseX = player.x - dir * 38;
+    const baseY = player.y + 2;
+
+    for (let i = 0; i < 4; i++) {
+      const y = baseY + (i - 1.5) * 10;
+      const len = 18 + player.momentum * 34 - i * 2;
+      ctx.beginPath();
+      ctx.moveTo(baseX - dir * (i * 9), y);
+      ctx.lineTo(baseX - dir * (len + i * 9), y);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawPlayer() {
+    const p = player;
+    const speed = Math.abs(p.vx);
+    const facing = p.facing || 1;
+
+    const bodyLoaded = calvinBodyImg.complete && calvinBodyImg.naturalWidth > 0;
+    const legsLoaded = calvinLegsImg.complete && calvinLegsImg.naturalWidth > 0;
+    const jumpLegsLoaded = calvinJumpLegsImg.complete && calvinJumpLegsImg.naturalWidth > 0;
+
+    const squash = p.squash;
+    const slideScaleY = p.sliding ? 0.54 : 1;
+    const slideScaleX = p.sliding ? 1.22 : 1;
+    const bodyScaleX = (1 + squash * 0.5) * slideScaleX;
+    const bodyScaleY = (1 - squash * 0.5) * slideScaleY;
+
+    let tilt = 0;
+    if (!p.grounded && !p.ledgeGrabbed) {
+      tilt = Math.max(-0.22, Math.min(0.22, p.vy / 1600)) * facing;
+    }
+    if (p.sliding) {
+      tilt = -0.12 * facing;
+    }
+
+    // Shadow.
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + playerRadiusY() + 15, p.r * (1.3 + speed / 1100), 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Separate legs layer. This keeps the existing "separate sprite" concept,
+    // while giving Calvin a little run cycle without needing a full atlas yet.
+    if ((legsLoaded || jumpLegsLoaded) && !p.ledgeGrabbed) {
+      ctx.save();
+
+      const airborne = !p.grounded && !p.sliding;
+      const legBob = p.grounded && !p.sliding ? Math.sin(p.runTime * (8.2 + p.momentum * 2.2)) * Math.min(1, speed / TUNING.maxRun) : 0;
+      const legSquashY = p.sliding ? 0.62 : 1;
+      const legSquashX = p.sliding ? 1.18 : 1;
+
+      if (airborne && jumpLegsLoaded) {
+        // Use the stretched jump-leg sprite during jump/fall/double-jump.
+        const jumpTilt = Math.max(-0.16, Math.min(0.16, p.vy / 2200)) * facing;
+        ctx.translate(p.x, p.y + 6);
+        ctx.scale(facing, 1);
+        ctx.rotate(jumpTilt);
+        ctx.drawImage(calvinJumpLegsImg, -48, -42, 96, 96);
+      } else if (legsLoaded) {
+        ctx.translate(p.x, p.y + 4 + Math.abs(legBob) * 1.5);
+        ctx.scale(facing * legSquashX, legSquashY);
+        ctx.rotate(legBob * 0.035);
+
+        // Separated standing/running legs.
+        ctx.drawImage(calvinLegsImg, -48, -44, 96, 96);
+      }
+
+      ctx.restore();
+    }
+
+    // Ledge arms/grab cue. Since Calvin is an animal sprite, make this read as
+    // paws reaching over the edge instead of cartoon arms.
+    if (p.ledgeGrabbed) {
+      ctx.save();
+      ctx.strokeStyle = "#8a5a2c";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      const reachDir = p.ledgeSide < 0 ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(p.x + reachDir * 13, p.y - 7);
+      ctx.lineTo(p.x + reachDir * 30, p.y - 22);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p.x + reachDir * 2, p.y - 4);
+      ctx.lineTo(p.x + reachDir * 23, p.y - 21);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Main body sprite.
+    if (bodyLoaded) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.scale(facing * bodyScaleX, bodyScaleY);
+      ctx.rotate(tilt);
+
+      let bob = 0;
+      if (p.grounded && !p.sliding) {
+        bob = Math.sin(p.runTime * (7.2 + p.momentum * 2.0)) * Math.min(2.4, speed / 280);
+      }
+      if (p.ledgeGrabbed) {
+        bob = Math.sin(performance.now() / 180) * 1.2;
+      }
+
+      // Calvin is visually wider than the original ball, but collision stays the same.
+      // The sprite is anchored to the original player center.
+      // Body enlarged 15% and lowered to overlap the separated legs cleanly.
+      const drawW = p.sliding ? 101 : 108;
+      const drawH = p.sliding ? 62 : 85;
+      const drawX = -drawW / 2;
+      const drawY = p.sliding ? -12 : -34 + bob;
+
+      ctx.drawImage(calvinBodyImg, drawX, drawY, drawW, drawH);
+
+      ctx.restore();
+    } else {
+      // Fallback black ball if image loading fails.
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.fillStyle = "#050505";
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Tiny movement puffs near feet while Calvin builds momentum.
+    if (p.grounded && !p.sliding && speed > TUNING.maxRun * 0.55) {
+      ctx.save();
+      ctx.globalAlpha = 0.08 + p.momentum * 0.08;
+      ctx.fillStyle = "#111827";
+      ctx.beginPath();
+      ctx.arc(p.x - facing * 28, p.y + playerRadiusY() + 6, 4 + p.momentum * 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawVignette() {
+    const g = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.2, W/2, H/2, Math.max(W,H)*0.75);
+    g.addColorStop(0, "rgba(255,255,255,0)");
+    g.addColorStop(1, "rgba(15,23,42,.15)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function loop(t) {
+    const now = t / 1000;
+    const dt = last ? now - last : 1 / 60;
+    last = now;
+
+    update(dt);
+    draw();
+
+    requestAnimationFrame(loop);
+  }
+
+  resize();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
