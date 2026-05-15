@@ -57,6 +57,12 @@ canvas {
   text-align: right;
   line-height: 1.35;
   pointer-events: none;
+  max-width: 50vw;
+}
+
+@media (max-width: 640px) {
+  .help { display: none; }
+  .hud { font-size: 12px; }
 }
 
 .help .desktop-only,
