@@ -6,12 +6,22 @@ import { WORLD, LEVEL } from "./levels.js";
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
 
-  const calvinBodyImg = new Image();
-  calvinBodyImg.src = "assets/calvin-body.png";
-  const calvinLegsImg = new Image();
-  calvinLegsImg.src = "assets/calvin-legs.png";
-  const calvinJumpLegsImg = new Image();
-  calvinJumpLegsImg.src = "assets/calvin-jump-legs.png";
+  function loadImg(src) {
+    const img = new Image();
+    img.src = src;
+    return img;
+  }
+  const SPRITES = {
+    body:       loadImg("assets/calvin-body.png"),
+    hanging:    loadImg("assets/hanging.png"),
+    standing:   loadImg("assets/legs-standing.png"),
+    walkA:      loadImg("assets/legs-default.png"),
+    walkB:      loadImg("assets/legs-walking.png"),
+    walkC:      loadImg("assets/legs-walking2.png"),
+    jump:       loadImg("assets/legs-jump.png"),
+    layingdown: loadImg("assets/legs-layingdown.png")
+  };
+  const ready = img => img.complete && img.naturalWidth > 0;
 
   const hud = document.getElementById("hud");
   const overlay = document.getElementById("overlay");
@@ -1065,14 +1075,19 @@ import { WORLD, LEVEL } from "./levels.js";
     ctx.restore();
   }
 
+  function pickLegsSprite(p, speed) {
+    if (p.sliding) return SPRITES.layingdown;
+    if (!p.grounded) return SPRITES.jump;
+    if (speed < 30) return SPRITES.standing;
+    const walkCycle = [SPRITES.walkA, SPRITES.walkB, SPRITES.walkA, SPRITES.walkC];
+    const frame = Math.floor(p.runTime * 1.6) % walkCycle.length;
+    return walkCycle[frame];
+  }
+
   function drawPlayer() {
     const p = player;
     const speed = Math.abs(p.vx);
     const facing = p.facing || 1;
-
-    const bodyLoaded = calvinBodyImg.complete && calvinBodyImg.naturalWidth > 0;
-    const legsLoaded = calvinLegsImg.complete && calvinLegsImg.naturalWidth > 0;
-    const jumpLegsLoaded = calvinJumpLegsImg.complete && calvinJumpLegsImg.naturalWidth > 0;
 
     const squash = p.squash;
     const slideScaleY = p.sliding ? 0.54 : 1;
@@ -1094,46 +1109,40 @@ import { WORLD, LEVEL } from "./levels.js";
     ctx.fill();
     ctx.restore();
 
-    if ((legsLoaded || jumpLegsLoaded) && !p.ledgeGrabbed) {
+    if (p.ledgeGrabbed && ready(SPRITES.hanging)) {
+      const bob = Math.sin(performance.now() / 180) * 1.2;
+      ctx.save();
+      ctx.translate(p.x, p.y + bob);
+      ctx.scale(facing, 1);
+      ctx.drawImage(SPRITES.hanging, -48, -44, 96, 96);
+      ctx.restore();
+      return;
+    }
+
+    const legsSprite = pickLegsSprite(p, speed);
+    if (ready(legsSprite)) {
       ctx.save();
       const airborne = !p.grounded && !p.sliding;
       const legBob = p.grounded && !p.sliding ? Math.sin(p.runTime * (8.2 + p.momentum * 2.2)) * Math.min(1, speed / TUNING.maxRun) : 0;
       const legSquashY = p.sliding ? 0.62 : 1;
       const legSquashX = p.sliding ? 1.18 : 1;
 
-      if (airborne && jumpLegsLoaded) {
+      if (airborne) {
         const jumpTilt = Math.max(-0.16, Math.min(0.16, p.vy / 2200)) * facing;
         ctx.translate(p.x, p.y + 6);
         ctx.scale(facing, 1);
         ctx.rotate(jumpTilt);
-        ctx.drawImage(calvinJumpLegsImg, -48, -42, 96, 96);
-      } else if (legsLoaded) {
+        ctx.drawImage(legsSprite, -48, -42, 96, 96);
+      } else {
         ctx.translate(p.x, p.y + 4 + Math.abs(legBob) * 1.5);
         ctx.scale(facing * legSquashX, legSquashY);
         ctx.rotate(legBob * 0.035);
-        ctx.drawImage(calvinLegsImg, -48, -44, 96, 96);
+        ctx.drawImage(legsSprite, -48, -44, 96, 96);
       }
       ctx.restore();
     }
 
-    if (p.ledgeGrabbed) {
-      ctx.save();
-      ctx.strokeStyle = "#8a5a2c";
-      ctx.lineWidth = 5;
-      ctx.lineCap = "round";
-      const reachDir = p.ledgeSide < 0 ? 1 : -1;
-      ctx.beginPath();
-      ctx.moveTo(p.x + reachDir * 13, p.y - 7);
-      ctx.lineTo(p.x + reachDir * 30, p.y - 22);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(p.x + reachDir * 2, p.y - 4);
-      ctx.lineTo(p.x + reachDir * 23, p.y - 21);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    if (bodyLoaded) {
+    if (ready(SPRITES.body)) {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.scale(facing * bodyScaleX, bodyScaleY);
@@ -1141,14 +1150,13 @@ import { WORLD, LEVEL } from "./levels.js";
 
       let bob = 0;
       if (p.grounded && !p.sliding) bob = Math.sin(p.runTime * (7.2 + p.momentum * 2.0)) * Math.min(2.4, speed / 280);
-      if (p.ledgeGrabbed) bob = Math.sin(performance.now() / 180) * 1.2;
 
       const drawW = p.sliding ? 101 : 108;
       const drawH = p.sliding ? 62 : 85;
       const drawX = -drawW / 2;
       const drawY = p.sliding ? -12 : -34 + bob;
 
-      ctx.drawImage(calvinBodyImg, drawX, drawY, drawW, drawH);
+      ctx.drawImage(SPRITES.body, drawX, drawY, drawW, drawH);
       ctx.restore();
     } else {
       ctx.save();
