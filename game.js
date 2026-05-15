@@ -74,6 +74,7 @@ import { WORLD, LEVEL } from "./levels.js";
   function makePlatform(def) {
     return {
       type: "static",
+      kind: def.kind || "rooftop",
       x: def.x, y: def.y, w: def.w, h: def.h,
       baseX: def.x, baseY: def.y,
       prevX: def.x, prevY: def.y,
@@ -111,6 +112,9 @@ import { WORLD, LEVEL } from "./levels.js";
   });
 
   const goal = LEVEL.goal;
+  const manholes = (LEVEL.manholes || []).map(m => ({ ...m }));
+  const bones = (LEVEL.bones || []).map(b => ({ x: b.x, y: b.y, taken: false, bob: Math.random() * Math.PI * 2 }));
+  let bonesCollected = 0;
 
   let DPR = 1, W = 0, H = 0, scale = 1;
   let cameraX = 0, cameraY = 0;
@@ -212,6 +216,8 @@ import { WORLD, LEVEL } from "./levels.js";
       sliding: false, slideTimer: 0, slideCooldown: 0
     });
     resetPlatforms();
+    for (const b of bones) b.taken = false;
+    bonesCollected = 0;
     cameraX = 0;
     cameraY = 0;
     state = "play";
@@ -230,7 +236,7 @@ import { WORLD, LEVEL } from "./levels.js";
     state = "win";
     recordDistance();
     sfx.win();
-    overlay.innerHTML = `<div class="card"><h1>Nice hops.</h1><p>Calvin reached the goal.</p>${bestText()}<p>Press reset or Space to play again.</p></div>`;
+    overlay.innerHTML = `<div class="card"><h1>Nice hops.</h1><p>Calvin reached the goal with <strong>${bonesCollected}/${bones.length}</strong> bones.</p>${bestText()}<p>Press reset or Space to play again.</p></div>`;
     overlay.classList.remove("hidden");
   }
 
@@ -583,7 +589,16 @@ import { WORLD, LEVEL } from "./levels.js";
 
     updatePuffs(dt);
     cameraFollow(dt);
+    collectBones();
 
+    // Manhole death: stepping/falling into one of the open sidewalk holes.
+    for (const m of manholes) {
+      if (player.x > m.x && player.x < m.x + m.w && player.y + player.r > m.y - 4) {
+        die();
+        return;
+      }
+    }
+    // Safety net: if a player somehow ends up below the world, end the run.
     if (player.y > WORLD.h + 220) die();
 
     if (player.x > goal.x && player.x < goal.x + goal.w && player.y + player.r > goal.y && player.y - player.r < goal.y + goal.h) {
@@ -598,11 +613,24 @@ import { WORLD, LEVEL } from "./levels.js";
 
   function updateHud(extra) {
     const dist = Math.max(0, Math.floor(player.x / 10));
-    const momentumText = player.momentum > 0.05 ? ` · Momentum: ${Math.round(player.momentum * 100)}%` : "";
     const slideText = player.sliding ? " · Sliding" : "";
     const bestText = bestDistance > 0 ? ` · Best: ${bestDistance}m` : "";
     const extraText = extra ? ` · ${extra}` : "";
-    hud.textContent = `Distance: ${dist}m · Jumps: ${player.jumpsUsed}/2${momentumText}${slideText}${bestText}${extraText}`;
+    hud.textContent = `Bones: ${bonesCollected}/${bones.length} · Distance: ${dist}m${slideText}${bestText}${extraText}`;
+  }
+
+  function collectBones() {
+    for (const b of bones) {
+      if (b.taken) continue;
+      const dx = player.x - b.x;
+      const dy = player.y - b.y;
+      if (dx * dx + dy * dy < (player.r + 16) * (player.r + 16)) {
+        b.taken = true;
+        bonesCollected++;
+        spawnPuff(b.x, b.y, false);
+        sfx.land();
+      }
+    }
   }
 
   const puffs = [];
@@ -851,7 +879,9 @@ import { WORLD, LEVEL } from "./levels.js";
 
     ctx.save();
     ctx.translate(-cameraX, -cameraY);
+    drawManholes();
     drawPlatforms();
+    drawBones();
     drawGoal();
     drawPuffs();
     drawApexHangCue();
@@ -860,51 +890,170 @@ import { WORLD, LEVEL } from "./levels.js";
     drawMomentumLines();
     ctx.restore();
 
+    drawScanlines();
     if (state === "play") drawVignette();
     if (paused && state === "play") drawPaused();
   }
 
   function drawBackground() {
+    // Dusk-into-pastel sky with a magenta-to-teal retro gradient.
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#dff3ff");
-    g.addColorStop(0.55, "#f7fbff");
-    g.addColorStop(1, "#eaf6ee");
+    g.addColorStop(0.00, "#f3c1ee");
+    g.addColorStop(0.45, "#ffd2b1");
+    g.addColorStop(0.80, "#c9e8e3");
+    g.addColorStop(1.00, "#e9efe6");
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
 
+    // Far parallax: city skyline silhouette.
     ctx.save();
-    ctx.globalAlpha = 0.38;
-    for (let i = 0; i < 14; i++) {
-      const x = ((i * 390 - cameraX * 0.22) % (W + 300)) - 160;
-      const y = 70 + (i % 5) * 58;
-      drawCloud(x, y, 0.75 + (i % 3) * 0.22);
+    ctx.translate(-cameraX * 0.18, 0);
+    const skylineY = H - 220;
+    ctx.fillStyle = "rgba(74, 60, 102, 0.55)";
+    const bldgs = [
+      [0,  80, 60], [70,  120, 90], [180, 60, 120], [260, 95, 70],
+      [370, 140, 130], [520, 70, 80], [610, 100, 60], [720, 130, 110],
+      [870, 80, 90], [970, 60, 130], [1050, 110, 70]
+    ];
+    for (let tile = 0; tile < 6; tile++) {
+      const ox = tile * 1100;
+      for (const [bx, bw, bh] of bldgs) {
+        ctx.fillRect(ox + bx, skylineY - bh, bw, bh);
+        // Window grid (CRT-pixel feel)
+        ctx.fillStyle = "rgba(255, 220, 140, 0.5)";
+        for (let wy = skylineY - bh + 14; wy < skylineY - 8; wy += 12) {
+          for (let wx = ox + bx + 8; wx < ox + bx + bw - 8; wx += 12) {
+            if ((wx + wy) % 24 === 0) ctx.fillRect(wx, wy, 4, 5);
+          }
+        }
+        ctx.fillStyle = "rgba(74, 60, 102, 0.55)";
+      }
     }
     ctx.restore();
 
+    // Near parallax: brick storefronts behind the playable area.
     ctx.save();
-    ctx.translate(-cameraX * 0.12, 0);
-    ctx.fillStyle = "rgba(39,52,71,.08)";
-    for (let i = -2; i < 20; i++) {
-      const x = i * 360;
+    ctx.translate(-cameraX * 0.55, 0);
+    const fronts = [
+      { x: 100,  w: 360, color: "#b85d5d", sign: "ARCADE",  signColor: "#fff5b1" },
+      { x: 520,  w: 280, color: "#7c5fb8", sign: "DELI",    signColor: "#f8b7ff" },
+      { x: 860,  w: 320, color: "#5db8a8", sign: "VHS",     signColor: "#ffd166" },
+      { x: 1240, w: 300, color: "#d39a5c", sign: "DINER",   signColor: "#f0fff0" },
+      { x: 1600, w: 340, color: "#5d7bb8", sign: "RECORDS", signColor: "#ffadd1" },
+      { x: 1990, w: 260, color: "#c46a8e", sign: "BAGELS",  signColor: "#fff7a5" },
+      { x: 2300, w: 360, color: "#6fb874", sign: "CALL HOME", signColor: "#fff" },
+      { x: 2720, w: 300, color: "#5db8a8", sign: "TAPES",   signColor: "#ffd166" },
+      { x: 3080, w: 320, color: "#b85d5d", sign: "PIZZA",   signColor: "#fff5b1" },
+      { x: 3460, w: 300, color: "#7c5fb8", sign: "MODEM",   signColor: "#f8b7ff" },
+      { x: 3820, w: 360, color: "#d39a5c", sign: "OPEN 24", signColor: "#f0fff0" },
+      { x: 4240, w: 280, color: "#5d7bb8", sign: "DELI",    signColor: "#ffadd1" },
+      { x: 4570, w: 320, color: "#6fb874", sign: "BARK!",   signColor: "#fff" },
+      { x: 4950, w: 240, color: "#c46a8e", sign: "GOAL",    signColor: "#fff7a5" }
+    ];
+    const facadeTop = 320;
+    const facadeBottom = 600;
+    for (const f of fronts) {
+      // Brick body
+      ctx.fillStyle = f.color;
+      ctx.fillRect(f.x, facadeTop, f.w, facadeBottom - facadeTop);
+      // Brick mortar lines
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      for (let by = facadeTop + 14; by < facadeBottom; by += 18) {
+        ctx.fillRect(f.x, by, f.w, 2);
+      }
+      // Windows w/ scanline tint
+      ctx.fillStyle = "rgba(40, 50, 80, 0.7)";
+      const winY = facadeTop + 50, winH = 70;
+      for (let wx = f.x + 22; wx < f.x + f.w - 50; wx += 70) {
+        ctx.fillRect(wx, winY, 44, winH);
+        ctx.fillStyle = "rgba(180,220,255,0.35)";
+        for (let s = 0; s < winH; s += 4) ctx.fillRect(wx, winY + s, 44, 1);
+        ctx.fillStyle = "rgba(40, 50, 80, 0.7)";
+      }
+      // Neon-ish sign
+      ctx.fillStyle = "rgba(20,20,30,0.85)";
+      const signY = facadeTop + 150, signH = 26;
+      ctx.fillRect(f.x + 18, signY, f.w - 36, signH);
+      ctx.fillStyle = f.signColor;
+      ctx.font = "700 16px system-ui, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "center";
+      ctx.fillText(f.sign, f.x + f.w / 2, signY + signH / 2 + 1);
+    }
+    ctx.restore();
+
+    // Sidewalk asphalt band (just a tint behind the ground platforms)
+    ctx.save();
+    ctx.fillStyle = "rgba(60, 56, 80, 0.18)";
+    ctx.fillRect(0, 750, W, 80);
+    ctx.restore();
+  }
+
+  function drawScanlines() {
+    // Very subtle CRT scanline overlay.
+    ctx.save();
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = "#000";
+    for (let y = 0; y < H; y += 3) ctx.fillRect(0, y, W, 1);
+    ctx.restore();
+  }
+
+  function drawManholes() {
+    for (const m of manholes) {
+      // Dark opening below the sidewalk line.
+      ctx.save();
+      const cx = m.x + m.w / 2;
+      ctx.fillStyle = "#0a0a12";
       ctx.beginPath();
-      ctx.moveTo(x, H);
-      ctx.lineTo(x + 170, H - 190);
-      ctx.lineTo(x + 370, H);
-      ctx.closePath();
+      ctx.ellipse(cx, m.y + 6, m.w / 2 + 4, 12, 0, 0, Math.PI * 2);
       ctx.fill();
+      // Grate hint on the back rim
+      ctx.strokeStyle = "rgba(180,180,200,0.35)";
+      ctx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(m.x + 8, m.y + 4 + i * 3);
+        ctx.lineTo(m.x + m.w - 8, m.y + 4 + i * 3);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
-    ctx.restore();
   }
 
-  function drawCloud(x, y, s) {
-    ctx.fillStyle = "#fff";
-    ctx.beginPath();
-    ctx.arc(x, y, 26 * s, 0, Math.PI * 2);
-    ctx.arc(x + 28 * s, y - 10 * s, 34 * s, 0, Math.PI * 2);
-    ctx.arc(x + 66 * s, y, 28 * s, 0, Math.PI * 2);
-    ctx.arc(x + 42 * s, y + 8 * s, 30 * s, 0, Math.PI * 2);
-    ctx.fill();
+  function drawBones() {
+    const t = performance.now() / 400;
+    for (const b of bones) {
+      if (b.taken) continue;
+      const float = Math.sin(t + b.bob) * 3;
+      const x = b.x, y = b.y + float;
+      ctx.save();
+      ctx.translate(x, y);
+      // Tiny dog bone: two circles joined by a bar.
+      ctx.fillStyle = "#f7f1d8";
+      ctx.strokeStyle = "#3a3022";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(-7, -3, 4, 0, Math.PI * 2);
+      ctx.arc(-7,  3, 4, 0, Math.PI * 2);
+      ctx.arc( 7, -3, 4, 0, Math.PI * 2);
+      ctx.arc( 7,  3, 4, 0, Math.PI * 2);
+      ctx.fillRect(-7, -3, 14, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
   }
+
+  const KIND_PALETTE = {
+    ground:     { body: "#5a5566", top: "#a8a4b8", stripe: "rgba(255,255,255,0.12)" },
+    rooftop:    { body: "#2d3a4d", top: "#6a8aa8", stripe: "rgba(255,255,255,0.18)" },
+    awning:     { body: "#c84a4a", top: "#ffd166", stripe: "rgba(255,255,255,0.55)" },
+    windowsill: { body: "#5b4a3e", top: "#c79b6a", stripe: "rgba(255,255,255,0.25)" },
+    car:        { body: "#3a8ec0", top: "#c8e6f0", stripe: null },
+    bench:      { body: "#5a3e2a", top: "#8a6240", stripe: null },
+    barrel:     { body: "#9a5a2a", top: "#d39a5c", stripe: null },
+    cone:       { body: "#e85d2a", top: "#fff5b1", stripe: null }
+  };
 
   function drawPlatforms() {
     for (const p of platforms) {
@@ -927,51 +1076,112 @@ import { WORLD, LEVEL } from "./levels.js";
         ctx.setLineDash([]);
       }
 
-      ctx.fillStyle = "rgba(15,23,42,.14)";
-      roundRect(p.x + 9, drawY + 14, p.w, p.h, 18);
-      ctx.fill();
-
-      let body = "#273447";
-      let top = "#56687f";
-
-      if (p.type === "moving") {
-        body = "#263a4d";
-        top = "#78a0c4";
-      }
-
-      if (p.type === "crumble") {
-        const warning = p.touched ? Math.max(0, p.crumbleTimer / p.crumbleDelay) : 1;
-        body = p.touched ? "#5a3640" : "#3d3345";
-        top = p.touched ? "#d78686" : "#8d789f";
-        ctx.translate((Math.random() - 0.5) * (1 - warning) * 5, (Math.random() - 0.5) * (1 - warning) * 3);
-      }
-
-      ctx.fillStyle = body;
-      roundRect(p.x, drawY, p.w, p.h, 16);
-      ctx.fill();
-
-      ctx.fillStyle = top;
-      roundRect(p.x, drawY, p.w, 13, 13);
-      ctx.fill();
-
-      if (p.type === "crumble") {
-        ctx.strokeStyle = "rgba(255,255,255,.22)";
-        ctx.lineWidth = 2;
-        for (let x = p.x + 36; x < p.x + p.w - 30; x += 52) {
-          ctx.beginPath();
-          ctx.moveTo(x, drawY + 16);
-          ctx.lineTo(x + 20, drawY + 32);
-          ctx.stroke();
-        }
-      } else {
-        ctx.fillStyle = "rgba(255,255,255,.18)";
-        for (let x = p.x + 28; x < p.x + p.w - 20; x += 58) {
-          ctx.fillRect(x, drawY + 20, 22, 3);
-        }
-      }
+      if (p.kind === "cone")        drawCone(p.x, drawY, p.w, p.h);
+      else if (p.kind === "barrel") drawBarrel(p.x, drawY, p.w, p.h);
+      else if (p.kind === "bench")  drawBench(p.x, drawY, p.w, p.h);
+      else if (p.kind === "car")    drawCar(p.x, drawY, p.w, p.h);
+      else                          drawBoxPlatform(p, drawY);
 
       ctx.restore();
     }
+  }
+
+  function drawBoxPlatform(p, drawY) {
+    const pal = KIND_PALETTE[p.kind] || KIND_PALETTE.rooftop;
+    // Shadow
+    ctx.fillStyle = "rgba(15,23,42,.14)";
+    roundRect(p.x + 9, drawY + 14, p.w, p.h, p.kind === "ground" ? 6 : 12);
+    ctx.fill();
+
+    let body = pal.body, top = pal.top;
+    if (p.type === "crumble") {
+      const warning = p.touched ? Math.max(0, p.crumbleTimer / p.crumbleDelay) : 1;
+      ctx.translate((Math.random() - 0.5) * (1 - warning) * 5, (Math.random() - 0.5) * (1 - warning) * 3);
+    }
+
+    ctx.fillStyle = body;
+    roundRect(p.x, drawY, p.w, p.h, p.kind === "ground" ? 4 : 12);
+    ctx.fill();
+    ctx.fillStyle = top;
+    roundRect(p.x, drawY, p.w, p.kind === "windowsill" ? 6 : 10, p.kind === "ground" ? 4 : 8);
+    ctx.fill();
+
+    if (pal.stripe) {
+      ctx.fillStyle = pal.stripe;
+      for (let x = p.x + 22; x < p.x + p.w - 20; x += 60) ctx.fillRect(x, drawY + 16, 22, 2);
+    }
+
+    // Awning: candy-stripe red/white
+    if (p.kind === "awning") {
+      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      for (let x = p.x; x < p.x + p.w; x += 24) ctx.fillRect(x, drawY + 8, 12, p.h - 8);
+    }
+  }
+
+  function drawBarrel(x, y, w, h) {
+    ctx.fillStyle = "rgba(0,0,0,.18)";
+    roundRect(x + 4, y + 6, w, h, 6); ctx.fill();
+    ctx.fillStyle = "#9a5a2a";
+    roundRect(x, y, w, h, 6); ctx.fill();
+    ctx.fillStyle = "#3a2210";
+    ctx.fillRect(x, y + h * 0.32, w, 3);
+    ctx.fillRect(x, y + h * 0.68, w, 3);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(x + 4, y + 4, 4, h - 8);
+  }
+
+  function drawCone(x, y, w, h) {
+    ctx.fillStyle = "rgba(0,0,0,.18)";
+    ctx.beginPath();
+    ctx.ellipse(x + w / 2 + 2, y + h + 3, w * 0.7, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#e85d2a";
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, y);
+    ctx.lineTo(x + w + 4, y + h);
+    ctx.lineTo(x - 4, y + h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillRect(x - 2, y + h * 0.55, w + 4, 3);
+    ctx.fillStyle = "#3a3022";
+    ctx.fillRect(x - 6, y + h - 3, w + 12, 4);
+  }
+
+  function drawBench(x, y, w, h) {
+    ctx.fillStyle = "rgba(0,0,0,.18)";
+    roundRect(x + 5, y + 6, w, h, 4); ctx.fill();
+    // seat
+    ctx.fillStyle = "#8a6240";
+    ctx.fillRect(x, y, w, h * 0.35);
+    // slats
+    ctx.fillStyle = "#5a3e2a";
+    for (let i = 1; i < 4; i++) ctx.fillRect(x + (w * i) / 4 - 1, y, 2, h * 0.35);
+    // legs
+    ctx.fillRect(x + 6,      y + h * 0.35, 6, h * 0.65);
+    ctx.fillRect(x + w - 12, y + h * 0.35, 6, h * 0.65);
+  }
+
+  function drawCar(x, y, w, h) {
+    ctx.fillStyle = "rgba(0,0,0,.20)";
+    roundRect(x + 6, y + h - 4, w, 10, 5); ctx.fill();
+    // body
+    ctx.fillStyle = "#3a8ec0";
+    roundRect(x, y + h * 0.35, w, h * 0.55, 8); ctx.fill();
+    // roof
+    ctx.fillStyle = "#2a6e96";
+    roundRect(x + w * 0.18, y, w * 0.64, h * 0.45, 10); ctx.fill();
+    // windows
+    ctx.fillStyle = "#c8e6f0";
+    ctx.fillRect(x + w * 0.22, y + 6, w * 0.25, h * 0.32);
+    ctx.fillRect(x + w * 0.53, y + 6, w * 0.25, h * 0.32);
+    // wheels
+    ctx.fillStyle = "#111";
+    ctx.beginPath(); ctx.arc(x + w * 0.22, y + h - 4, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + w * 0.78, y + h - 4, 9, 0, Math.PI * 2); ctx.fill();
+    // headlight
+    ctx.fillStyle = "#fff5b1";
+    ctx.fillRect(x + w - 6, y + h * 0.5, 4, 6);
   }
 
   function roundRect(x, y, w, h, r) {
