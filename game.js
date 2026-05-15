@@ -1080,7 +1080,7 @@ import { WORLD, LEVEL } from "./levels.js";
     if (!p.grounded) return SPRITES.jump;
     if (speed < 30) return SPRITES.standing;
     const walkCycle = [SPRITES.walkA, SPRITES.walkB, SPRITES.walkA, SPRITES.walkC];
-    const frame = Math.floor(p.runTime * 1.6) % walkCycle.length;
+    const frame = Math.floor(p.runTime * 0.4) % walkCycle.length;
     return walkCycle[frame];
   }
 
@@ -1113,7 +1113,7 @@ import { WORLD, LEVEL } from "./levels.js";
       const bob = Math.sin(performance.now() / 180) * 1.2;
       ctx.save();
       ctx.translate(p.x, p.y + bob);
-      ctx.scale(facing, 1);
+      ctx.scale(-p.ledgeSide, 1);
       ctx.drawImage(SPRITES.hanging, -48, -44, 96, 96);
       ctx.restore();
       return;
