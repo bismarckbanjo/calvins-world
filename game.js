@@ -32,6 +32,9 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
 
   const GRAVITY = 2300;
   const MAX_FALL = 1800;
+  const GRAVITY_Z = 2300;
+  const JUMP_VZ = 740;
+  const DOUBLE_JUMP_VZ = 660;
   const BEST_KEY = "calvins-world:best-distance";
 
   const TUNING = {
@@ -76,6 +79,8 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       type: "static",
       kind: def.kind || "rooftop",
       x: def.x, y: def.y, w: def.w, h: def.h,
+      top: def.top != null ? def.top : (def.solidFromBelow === false ? 80 : def.h),
+      solidFromBelow: def.solidFromBelow !== false,
       baseX: def.x, baseY: def.y,
       prevX: def.x, prevY: def.y,
       dx: 0, dy: 0,
@@ -112,7 +117,22 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
   });
 
   const goal = LEVEL.goal;
-  const bones = (LEVEL.bones || []).map(b => ({ x: b.x, y: b.y, taken: false, bob: Math.random() * Math.PI * 2 }));
+  // For each bone, find the elevated platform it sits on (if any) so we can
+  // render at the right height and only pick it up at the right Z.
+  function inferBoneZ(b) {
+    let best = 0;
+    for (const p of (LEVEL.platforms || [])) {
+      if (p.solidFromBelow !== false) continue;
+      if (b.x >= p.x && b.x <= p.x + p.w && b.y >= p.y && b.y <= p.y + p.h) {
+        if ((p.top || 0) > best) best = p.top;
+      }
+    }
+    return b.z != null ? b.z : best;
+  }
+  const bones = (LEVEL.bones || []).map(b => ({
+    x: b.x, y: b.y, z: inferBoneZ(b),
+    taken: false, bob: Math.random() * Math.PI * 2
+  }));
   let bonesCollected = 0;
   const ROAD_TOP = (ROAD && ROAD.top) || 540;
   const ROAD_BOTTOM = (ROAD && ROAD.bottom) || 700;
@@ -181,7 +201,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     blink: 0,
     heldDirection: 0, heldDirectionTime: 0,
     momentum: 0,
-    hopOffset: 0, hopVy: 0,
+    z: 0, vz: 0, standingOn: null,
     ledgeGrabbed: false, ledgePlatform: null, ledgeSide: 0,
     ledgeClimbTimer: 0,
     ledgeClimbFromX: 0, ledgeClimbFromY: 0,
@@ -213,7 +233,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       jumpsUsed: 0, jumpHoldTimer: 0,
       holdingJump: false, facing: 1, runTime: 0,
       squash: 0, blink: 0,
-      hopOffset: 0, hopVy: 0,
+      z: 0, vz: 0, standingOn: null,
       ledgeGrabbed: false, ledgePlatform: null, ledgeSide: 0, ledgeClimbTimer: 0,
       sliding: false, slideTimer: 0, slideCooldown: 0
     });
@@ -401,35 +421,76 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
     if (dx !== 0) player.facing = dx;
 
-    // Cosmetic hop on jump press.
-    if (input.jumpPressed || player.jumpBufferTimer > 0) {
-      if (player.hopOffset >= 0) {
-        player.hopVy = -480;
+    // ----- Z axis (jump + double jump + gravity) -----
+    const onGround = player.standingOn !== null || player.z <= 0;
+    if (input.jumpPressed) {
+      if (onGround) {
+        player.vz = JUMP_VZ;
+        player.jumpsUsed = 1;
+        player.standingOn = null;
         sfx.jump();
         spawnPuff(player.x, player.y + player.r, false);
+      } else if (player.jumpsUsed < 2) {
+        player.vz = DOUBLE_JUMP_VZ;
+        player.jumpsUsed = 2;
+        sfx.double();
+        spawnPuff(player.x, player.y + player.r * 0.6, true);
       }
-      player.jumpBufferTimer = 0;
     }
-    if (player.hopOffset < 0 || player.hopVy !== 0) {
-      player.hopOffset += player.hopVy * dt;
-      player.hopVy += 2300 * dt;
-      if (player.hopOffset >= 0) {
-        if (player.hopVy > 200) sfx.land();
-        player.hopOffset = 0;
-        player.hopVy = 0;
+    if (input.jumpReleased && player.vz > 0) player.vz *= 0.45;
+
+    // If on a platform but XY drifted off it, start falling.
+    if (player.standingOn) {
+      const p = player.standingOn;
+      if (player.x < p.x || player.x > p.x + p.w || player.y < p.y || player.y > p.y + p.h) {
+        player.standingOn = null;
+        player.vz = 0;
       }
     }
 
-    const accel = TUNING.groundAccel;
-    const maxSpeed = TUNING.maxRun * 0.78;
-    const friction = Math.pow(TUNING.groundFriction, dt * 60);
+    if (player.standingOn === null) {
+      const prevZ = player.z;
+      player.vz -= GRAVITY_Z * dt;
+      player.z += player.vz * dt;
+
+      // One-way landing on elevated platforms while falling.
+      if (player.vz < 0) {
+        for (const p of platforms) {
+          if (p.solidFromBelow) continue;
+          if (prevZ + 0.5 < p.top) continue;
+          if (player.z > p.top) continue;
+          if (player.x < p.x || player.x > p.x + p.w) continue;
+          if (player.y < p.y || player.y > p.y + p.h) continue;
+          player.z = p.top;
+          player.vz = 0;
+          player.jumpsUsed = 0;
+          player.standingOn = p;
+          if (prevZ - p.top > 12) sfx.land();
+          spawnPuff(player.x, player.y + player.r, false);
+          break;
+        }
+      }
+
+      // Land on the road.
+      if (player.standingOn === null && player.z <= 0) {
+        if (prevZ > 8) sfx.land();
+        player.z = 0;
+        player.vz = 0;
+        player.jumpsUsed = 0;
+      }
+    }
+
+    // ----- XY movement (slower pace) -----
+    const accel = 1900;
+    const maxSpeed = 360;
+    const friction = Math.pow(0.82, dt * 60);
 
     player.vx += dx * accel * dt;
     player.vy += dy * accel * dt;
     if (dx === 0) player.vx *= friction;
     if (dy === 0) player.vy *= friction;
-    if (Math.abs(player.vx) < 5) player.vx = 0;
-    if (Math.abs(player.vy) < 5) player.vy = 0;
+    if (Math.abs(player.vx) < 4) player.vx = 0;
+    if (Math.abs(player.vy) < 4) player.vy = 0;
 
     const sp = Math.hypot(player.vx, player.vy);
     if (sp > maxSpeed) {
@@ -437,9 +498,11 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       player.vy *= maxSpeed / sp;
     }
 
-    // X-axis movement + collision.
+    // X-axis movement + collision (only solid obstacles below current z).
     player.x += player.vx * dt;
     for (const p of platforms) {
+      if (!p.solidFromBelow) continue;
+      if (player.z >= p.top - 1) continue; // jumping over it
       if (!rectCircleCollision(player.x, player.y, player.r, p)) continue;
       if (player.vx > 0) player.x = p.x - player.r;
       else if (player.vx < 0) player.x = p.x + p.w + player.r;
@@ -449,18 +512,22 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     // Y-axis movement + collision.
     player.y += player.vy * dt;
     for (const p of platforms) {
+      if (!p.solidFromBelow) continue;
+      if (player.z >= p.top - 1) continue;
       if (!rectCircleCollision(player.x, player.y, player.r, p)) continue;
       if (player.vy > 0) player.y = p.y - player.r;
       else if (player.vy < 0) player.y = p.y + p.h + player.r;
       player.vy = 0;
     }
 
-    // Clamp Calvin to the road band — no falling off.
-    if (player.y < ROAD_TOP)    { player.y = ROAD_TOP;    if (player.vy < 0) player.vy = 0; }
-    if (player.y > ROAD_BOTTOM) { player.y = ROAD_BOTTOM; if (player.vy > 0) player.vy = 0; }
+    // Clamp Calvin to the road band ONLY when on the road (no rooftop clamp).
+    if (player.standingOn === null && player.z <= 0) {
+      if (player.y < ROAD_TOP)    { player.y = ROAD_TOP;    if (player.vy < 0) player.vy = 0; }
+      if (player.y > ROAD_BOTTOM) { player.y = ROAD_BOTTOM; if (player.vy > 0) player.vy = 0; }
+    }
 
-    player.grounded = true;
-    player.wasGrounded = true;
+    player.grounded = player.z === 0 || player.standingOn !== null;
+    player.wasGrounded = player.grounded;
     player.runTime += Math.hypot(player.vx, player.vy) * dt / 90;
     player.squash *= Math.pow(0.05, dt);
 
@@ -488,6 +555,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
   function collectBones() {
     for (const b of bones) {
       if (b.taken) continue;
+      if (Math.abs((player.z || 0) - (b.z || 0)) > 28) continue;
       const dx = player.x - b.x;
       const dy = player.y - b.y;
       if (dx * dx + dy * dy < (player.r + 16) * (player.r + 16)) {
@@ -897,7 +965,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     for (const b of bones) {
       if (b.taken) continue;
       const float = Math.sin(t + b.bob) * 3;
-      const x = b.x, y = b.y + float;
+      const x = b.x, y = b.y - (b.z || 0) + float;
       ctx.save();
       ctx.translate(x, y);
       // Tiny dog bone: two circles joined by a bar.
@@ -928,24 +996,25 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
   };
 
   function drawPlatforms() {
-    for (const p of platforms) {
+    // Ground obstacles first (so elevated platforms render on top).
+    const ordered = platforms.slice().sort((a, b) => (a.top || 0) - (b.top || 0));
+    for (const p of ordered) {
       if (!p.active && p.type !== "crumble") continue;
 
-      const drawY = p.y + (p.active ? 0 : p.dropY);
+      const baseY = p.y + (p.active ? 0 : p.dropY);
       const alpha = p.active ? 1 : Math.max(0, p.respawnTimer / p.respawnDelay) * 0.35;
+      const elevated = !p.solidFromBelow;
+      const drawY = elevated ? baseY - p.top : baseY;
 
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      if (p.type === "moving" && p.active) {
-        ctx.strokeStyle = "rgba(17,24,39,.16)";
-        ctx.lineWidth = 3;
-        ctx.setLineDash([12, 12]);
+      // Faint floor shadow on the road under an elevated platform.
+      if (elevated) {
+        ctx.fillStyle = "rgba(15, 12, 25, 0.18)";
         ctx.beginPath();
-        ctx.moveTo(p.path.x1 + p.w / 2, p.path.y1 + p.h / 2);
-        ctx.lineTo(p.path.x2 + p.w / 2, p.path.y2 + p.h / 2);
-        ctx.stroke();
-        ctx.setLineDash([]);
+        ctx.ellipse(p.x + p.w / 2, baseY + 8, p.w / 2, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       if (p.kind === "cone")        drawCone(p.x, drawY, p.w, p.h);
@@ -1160,7 +1229,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
   let walkPhase = 0;
   let lastWalkTick = 0;
   function pickLegsSprite(p) {
-    if ((p.hopOffset || 0) < -2) return SPRITES.jump;
+    if ((p.z || 0) > 2 && p.standingOn === null) return SPRITES.jump;
     if (input.move === 0 && !input.up && !input.down) return SPRITES.standing;
     const now = performance.now();
     if (now - lastWalkTick > 140) {
@@ -1206,12 +1275,12 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       return;
     }
 
-    const drawY0 = p.y + (p.hopOffset || 0);
+    const drawY0 = p.y - (p.z || 0);
 
     const legsSprite = pickLegsSprite(p);
     if (ready(legsSprite)) {
       ctx.save();
-      const airborne = (p.hopOffset || 0) < -2;
+      const airborne = (p.z || 0) > 2 && p.standingOn === null;
       const legBob = !airborne ? Math.sin(p.runTime * 8.6) * Math.min(1, Math.hypot(p.vx, p.vy) / TUNING.maxRun) : 0;
 
       if (airborne) {

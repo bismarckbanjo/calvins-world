@@ -1,77 +1,81 @@
 export const WORLD = { w: 5200, h: 760 };
 
-// Top-down road runner.
-// Road band runs from y=540 (back of road) to y=700 (front of road).
-// Calvin can walk in X (forward) and Y (between lanes) freely.
+// Top-down road. XY on the road plane + a Z axis for jump height.
 //
-// platforms = solid obstacles Calvin walks around. type stays "static",
-//             kind = "barrel" | "cone" | "bench" | "car".
-// bones     = collectibles scattered across all lanes.
-// goal      = flag at the far end, also at road level.
+// platforms come in two flavours, identified by `solidFromBelow`:
+//
+//   true  — road obstacles. Solid 0..top in Z. Calvin walks around them
+//           or jumps OVER them when his z >= top.
+//   false — elevated platforms (awnings, window sills, rooftops).
+//           Calvin can pass under them freely. Only one-way landing
+//           from above when he descends through their `top`.
+//
+// kind sets the visual style: ground obstacles `barrel|cone|bench|car`,
+// elevated `awning|windowsill|rooftop`.
 
 export const ROAD = { top: 540, bottom: 700 };
 
 export const LEVEL = {
   spawn: { x: 90, y: 620 },
-  goal: { x: 5050, y: 580, w: 54, h: 82 },
+  goal: { x: 5070, y: 580, w: 54, h: 82 },
 
   platforms: [
-    // Cluster 1 — easy intro: lone obstacles per lane so the player learns to dodge
-    { type: "static", kind: "barrel", x: 350,  y: 560, w: 40,  h: 40 },
-    { type: "static", kind: "cone",   x: 520,  y: 660, w: 30,  h: 35 },
-    { type: "static", kind: "bench",  x: 700,  y: 555, w: 120, h: 40 },
+    // ---------- Road-level hurdles (jumpable) ----------
+    { type: "static", kind: "barrel", x: 380,  y: 670, w: 40,  h: 40, top: 40,  solidFromBelow: true },
+    { type: "static", kind: "cone",   x: 760,  y: 560, w: 30,  h: 35, top: 35,  solidFromBelow: true },
+    { type: "static", kind: "bench",  x: 1080, y: 655, w: 140, h: 40, top: 40,  solidFromBelow: true },
+    { type: "static", kind: "car",    x: 1620, y: 600, w: 180, h: 60, top: 60,  solidFromBelow: true },
+    { type: "static", kind: "barrel", x: 2100, y: 555, w: 40,  h: 40, top: 40,  solidFromBelow: true },
+    { type: "static", kind: "cone",   x: 2480, y: 670, w: 30,  h: 35, top: 35,  solidFromBelow: true },
+    { type: "static", kind: "bench",  x: 2860, y: 555, w: 140, h: 40, top: 40,  solidFromBelow: true },
+    { type: "static", kind: "car",    x: 3320, y: 620, w: 180, h: 60, top: 60,  solidFromBelow: true },
+    { type: "static", kind: "barrel", x: 3760, y: 555, w: 40,  h: 40, top: 40,  solidFromBelow: true },
+    { type: "static", kind: "cone",   x: 4120, y: 670, w: 30,  h: 35, top: 35,  solidFromBelow: true },
+    { type: "static", kind: "bench",  x: 4460, y: 620, w: 140, h: 40, top: 40,  solidFromBelow: true },
 
-    // Cluster 2 — pick a lane
-    { type: "static", kind: "car",    x: 1000, y: 560, w: 180, h: 60 },
-    { type: "static", kind: "barrel", x: 1100, y: 670, w: 40,  h: 40 },
-    { type: "static", kind: "cone",   x: 1220, y: 545, w: 30,  h: 35 },
+    // ---------- Elevated platforms (one-way landings) ----------
+    // Awnings: easy single-jump reach.
+    { type: "static", kind: "awning",     x: 200,  y: 600, w: 180, h: 24, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "awning",     x: 580,  y: 580, w: 180, h: 24, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "windowsill", x: 880,  y: 600, w: 110, h: 18, top: 110, solidFromBelow: false },
+    // First rooftop — needs a double jump (or a step from the window sill below)
+    { type: "static", kind: "rooftop",    x: 1120, y: 580, w: 360, h: 30, top: 170, solidFromBelow: false },
 
-    // Cluster 3 — bench + cones squeeze you to the back
-    { type: "static", kind: "bench",  x: 1500, y: 660, w: 140, h: 40 },
-    { type: "static", kind: "cone",   x: 1650, y: 600, w: 30,  h: 35 },
+    { type: "static", kind: "windowsill", x: 1880, y: 580, w: 110, h: 18, top: 110, solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 2080, y: 600, w: 320, h: 30, top: 170, solidFromBelow: false },
 
-    // Cluster 4 — parked car in the middle, weave around
-    { type: "static", kind: "car",    x: 1900, y: 595, w: 180, h: 60 },
-    { type: "static", kind: "barrel", x: 2150, y: 545, w: 40,  h: 40 },
-    { type: "static", kind: "barrel", x: 2200, y: 660, w: 40,  h: 40 },
+    { type: "static", kind: "awning",     x: 2520, y: 580, w: 180, h: 24, top: 90,  solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 2780, y: 600, w: 320, h: 30, top: 170, solidFromBelow: false },
 
-    // Cluster 5 — cone alley
-    { type: "static", kind: "cone",   x: 2450, y: 555, w: 30,  h: 35 },
-    { type: "static", kind: "cone",   x: 2500, y: 610, w: 30,  h: 35 },
-    { type: "static", kind: "cone",   x: 2550, y: 665, w: 30,  h: 35 },
+    { type: "static", kind: "windowsill", x: 3200, y: 580, w: 110, h: 18, top: 110, solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 3500, y: 600, w: 380, h: 30, top: 180, solidFromBelow: false },
 
-    // Cluster 6
-    { type: "static", kind: "bench",  x: 2800, y: 595, w: 140, h: 40 },
-    { type: "static", kind: "car",    x: 3050, y: 560, w: 180, h: 60 },
-    { type: "static", kind: "barrel", x: 3300, y: 670, w: 40,  h: 40 },
+    { type: "static", kind: "awning",     x: 3960, y: 580, w: 180, h: 24, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 4200, y: 600, w: 380, h: 30, top: 180, solidFromBelow: false },
 
-    // Cluster 7
-    { type: "static", kind: "cone",   x: 3550, y: 545, w: 30,  h: 35 },
-    { type: "static", kind: "bench",  x: 3700, y: 655, w: 140, h: 40 },
-    { type: "static", kind: "barrel", x: 3900, y: 580, w: 40,  h: 40 },
-
-    // Cluster 8
-    { type: "static", kind: "car",    x: 4150, y: 600, w: 180, h: 60 },
-    { type: "static", kind: "cone",   x: 4200, y: 545, w: 30,  h: 35 },
-    { type: "static", kind: "barrel", x: 4400, y: 670, w: 40,  h: 40 },
-
-    // Final stretch
-    { type: "static", kind: "bench",  x: 4650, y: 555, w: 140, h: 40 },
-    { type: "static", kind: "cone",   x: 4800, y: 660, w: 30,  h: 35 }
+    { type: "static", kind: "awning",     x: 4640, y: 600, w: 200, h: 24, top: 90,  solidFromBelow: false }
   ],
 
   bones: [
-    // Scattered across all lanes so exploring Y pays off
-    { x: 180,  y: 580 }, { x: 250,  y: 670 }, { x: 420,  y: 555 },
-    { x: 600,  y: 670 }, { x: 850,  y: 555 }, { x: 950,  y: 670 },
-    { x: 1100, y: 560 }, { x: 1300, y: 620 }, { x: 1400, y: 560 },
-    { x: 1450, y: 690 }, { x: 1750, y: 555 }, { x: 1820, y: 690 },
-    { x: 2050, y: 555 }, { x: 2100, y: 690 }, { x: 2300, y: 600 },
-    { x: 2450, y: 690 }, { x: 2620, y: 555 }, { x: 2750, y: 690 },
-    { x: 2950, y: 555 }, { x: 3000, y: 690 }, { x: 3200, y: 690 },
-    { x: 3350, y: 555 }, { x: 3500, y: 690 }, { x: 3650, y: 555 },
-    { x: 3850, y: 690 }, { x: 3950, y: 555 }, { x: 4050, y: 690 },
-    { x: 4300, y: 690 }, { x: 4500, y: 690 }, { x: 4600, y: 555 },
-    { x: 4750, y: 690 }, { x: 4900, y: 620 }
+    // Road-level breadcrumbs (light scatter to keep walking interesting)
+    { x: 170,  y: 620 }, { x: 500,  y: 680 }, { x: 900,  y: 560 },
+    { x: 1380, y: 680 }, { x: 1850, y: 560 }, { x: 2300, y: 680 },
+    { x: 2780, y: 560 }, { x: 3160, y: 680 }, { x: 3650, y: 620 },
+    { x: 4040, y: 560 }, { x: 4420, y: 680 }, { x: 4900, y: 620 },
+
+    // Reward bones on the elevated platforms — most of the haul lives up high
+    { x: 240,  y: 640 }, { x: 320,  y: 640 },                                     // awning 1
+    { x: 640,  y: 620 }, { x: 720,  y: 620 },                                     // awning 2
+    { x: 920,  y: 640 },                                                          // window sill 1
+    { x: 1200, y: 620 }, { x: 1280, y: 620 }, { x: 1360, y: 620 }, { x: 1440, y: 620 }, // rooftop 1
+    { x: 1920, y: 620 },                                                          // window sill 2
+    { x: 2160, y: 640 }, { x: 2240, y: 640 }, { x: 2320, y: 640 },                // rooftop 2
+    { x: 2580, y: 620 }, { x: 2660, y: 620 },                                     // awning 3
+    { x: 2860, y: 640 }, { x: 2940, y: 640 }, { x: 3020, y: 640 },                // rooftop 3
+    { x: 3240, y: 620 },                                                          // window sill 3
+    { x: 3580, y: 640 }, { x: 3680, y: 640 }, { x: 3780, y: 640 }, { x: 3860, y: 640 }, // rooftop 4
+    { x: 4020, y: 620 }, { x: 4100, y: 620 },                                     // awning 4
+    { x: 4280, y: 640 }, { x: 4400, y: 640 }, { x: 4520, y: 640 },                // rooftop 5
+    { x: 4700, y: 640 }, { x: 4800, y: 640 }                                      // awning 5
   ]
 };
