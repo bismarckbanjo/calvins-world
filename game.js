@@ -422,17 +422,20 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     if (dx !== 0) player.facing = dx;
 
     // ----- Z axis (jump + double jump + gravity) -----
+    if (player.jumpBufferTimer > 0) player.jumpBufferTimer -= dt;
     const onGround = player.standingOn !== null || player.z <= 0;
-    if (input.jumpPressed) {
+    if (player.jumpBufferTimer > 0) {
       if (onGround) {
         player.vz = JUMP_VZ;
         player.jumpsUsed = 1;
         player.standingOn = null;
+        player.jumpBufferTimer = 0;
         sfx.jump();
         spawnPuff(player.x, player.y + player.r, false);
       } else if (player.jumpsUsed < 2) {
         player.vz = DOUBLE_JUMP_VZ;
         player.jumpsUsed = 2;
+        player.jumpBufferTimer = 0;
         sfx.double();
         spawnPuff(player.x, player.y + player.r * 0.6, true);
       }
