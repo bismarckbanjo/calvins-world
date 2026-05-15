@@ -1,4 +1,4 @@
-import { WORLD, LEVEL } from "./levels.js";
+import { WORLD, LEVEL, ROAD } from "./levels.js";
 
 (() => {
   "use strict";
@@ -112,9 +112,10 @@ import { WORLD, LEVEL } from "./levels.js";
   });
 
   const goal = LEVEL.goal;
-  const manholes = (LEVEL.manholes || []).map(m => ({ ...m }));
   const bones = (LEVEL.bones || []).map(b => ({ x: b.x, y: b.y, taken: false, bob: Math.random() * Math.PI * 2 }));
   let bonesCollected = 0;
+  const ROAD_TOP = (ROAD && ROAD.top) || 540;
+  const ROAD_BOTTOM = (ROAD && ROAD.bottom) || 700;
 
   let DPR = 1, W = 0, H = 0, scale = 1;
   let cameraX = 0, cameraY = 0;
@@ -158,9 +159,8 @@ import { WORLD, LEVEL } from "./levels.js";
   };
 
   const input = {
-    left: false, right: false,
+    left: false, right: false, up: false, down: false,
     jump: false, jumpPressed: false, jumpReleased: false,
-    down: false,
     slide: false, slidePressed: false,
     move: 0,
     pointerMoveId: null,
@@ -171,7 +171,7 @@ import { WORLD, LEVEL } from "./levels.js";
     x: LEVEL.spawn.x, y: LEVEL.spawn.y,
     vx: 0, vy: 0,
     r: 24,
-    grounded: false, wasGrounded: false,
+    grounded: true, wasGrounded: true,
     coyoteTimer: 0, jumpBufferTimer: 0,
     jumpsUsed: 0,
     jumpHoldTimer: 0, holdingJump: false,
@@ -181,6 +181,7 @@ import { WORLD, LEVEL } from "./levels.js";
     blink: 0,
     heldDirection: 0, heldDirectionTime: 0,
     momentum: 0,
+    hopOffset: 0, hopVy: 0,
     ledgeGrabbed: false, ledgePlatform: null, ledgeSide: 0,
     ledgeClimbTimer: 0,
     ledgeClimbFromX: 0, ledgeClimbFromY: 0,
@@ -207,11 +208,12 @@ import { WORLD, LEVEL } from "./levels.js";
   function reset() {
     Object.assign(player, {
       x: LEVEL.spawn.x, y: LEVEL.spawn.y, vx: 0, vy: 0,
-      grounded: false, wasGrounded: false,
+      grounded: true, wasGrounded: true,
       coyoteTimer: 0, jumpBufferTimer: 0,
       jumpsUsed: 0, jumpHoldTimer: 0,
       holdingJump: false, facing: 1, runTime: 0,
       squash: 0, blink: 0,
+      hopOffset: 0, hopVy: 0,
       ledgeGrabbed: false, ledgePlatform: null, ledgeSide: 0, ledgeClimbTimer: 0,
       sliding: false, slideTimer: 0, slideCooldown: 0
     });
@@ -289,8 +291,9 @@ import { WORLD, LEVEL } from "./levels.js";
     if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Space","KeyA","KeyD","KeyW","KeyS","KeyR","ShiftLeft","ShiftRight"].includes(e.code)) e.preventDefault();
     if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = true;
     if (e.code === "ArrowRight" || e.code === "KeyD") input.right = true;
-    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") pressJump();
+    if (e.code === "ArrowUp" || e.code === "KeyW") input.up = true;
     if (e.code === "ArrowDown" || e.code === "KeyS") input.down = true;
+    if (e.code === "Space") pressJump();
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") pressSlide();
     if (e.code === "KeyR") reset();
     setMoveFromBooleans();
@@ -299,8 +302,9 @@ import { WORLD, LEVEL } from "./levels.js";
   window.addEventListener("keyup", e => {
     if (e.code === "ArrowLeft" || e.code === "KeyA") input.left = false;
     if (e.code === "ArrowRight" || e.code === "KeyD") input.right = false;
-    if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "Space") releaseJump();
+    if (e.code === "ArrowUp" || e.code === "KeyW") input.up = false;
     if (e.code === "ArrowDown" || e.code === "KeyS") input.down = false;
+    if (e.code === "Space") releaseJump();
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") releaseSlide();
     setMoveFromBooleans();
   });
@@ -391,217 +395,80 @@ import { WORLD, LEVEL } from "./levels.js";
 
     dt = Math.min(dt, 1 / 30);
 
-    if (player.ledgeClimbTimer > 0) {
-      player.ledgeClimbTimer -= dt;
-      const t = 1 - Math.max(0, player.ledgeClimbTimer / TUNING.ledgeClimbTime);
-      const eased = 1 - Math.pow(1 - t, 3);
-      player.x = player.ledgeClimbFromX + (player.ledgeClimbToX - player.ledgeClimbFromX) * eased;
-      player.y = player.ledgeClimbFromY + (player.ledgeClimbToY - player.ledgeClimbFromY) * eased;
-      player.vx = 0;
-      player.vy = 0;
-      player.grounded = true;
-      player.wasGrounded = true;
-      player.coyoteTimer = TUNING.coyote;
-      player.jumpsUsed = 0;
-      input.jumpPressed = false;
-      input.jumpReleased = false;
-      input.slidePressed = false;
-      updatePuffs(dt);
-      cameraFollow(dt);
-      updateHud("Climbing");
-      return;
-    }
-
-    if (player.ledgeGrabbed) {
-      handleLedgeHang(dt);
-      updatePuffs(dt);
-      cameraFollow(dt);
-      updateHud("Ledge");
-      input.jumpPressed = false;
-      input.jumpReleased = false;
-      input.slidePressed = false;
-      return;
-    }
-
     updatePlatforms(dt);
 
-    player.wasGrounded = player.grounded;
-    player.grounded = false;
+    const dx = input.move;
+    const dy = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+    if (dx !== 0) player.facing = dx;
 
-    if (player.jumpBufferTimer > 0) player.jumpBufferTimer -= dt;
-    if (player.coyoteTimer > 0) player.coyoteTimer -= dt;
-
-    const desired = input.move;
-    if (desired !== 0) player.facing = desired;
-
-    if (desired !== 0) {
-      if (desired === player.heldDirection) {
-        player.heldDirectionTime += dt;
-      } else {
-        player.heldDirection = desired;
-        player.heldDirectionTime = 0;
-        player.momentum = 0;
-      }
-    } else {
-      player.heldDirection = 0;
-      player.heldDirectionTime = 0;
-      player.momentum = Math.max(0, player.momentum - dt * 1.85);
-    }
-
-    const momentumTarget = desired !== 0 && player.heldDirectionTime > TUNING.momentumDelay
-      ? Math.min(1, (player.heldDirectionTime - TUNING.momentumDelay) / TUNING.momentumRampTime)
-      : 0;
-
-    const momentumEase = 1 - Math.pow(0.001, dt);
-    player.momentum += (momentumTarget - player.momentum) * momentumEase;
-
-    const activeMaxRun = TUNING.maxRun + TUNING.momentumMaxBonus * player.momentum;
-    const groundAccel = TUNING.groundAccel * (1 + (TUNING.momentumAccelBoost - 1) * player.momentum);
-    const airAccel = TUNING.airAccel * (1 - TUNING.airMomentumControlPenalty * player.momentum);
-    const accel = player.wasGrounded ? groundAccel : airAccel;
-
-    player.vx += desired * accel * dt;
-
-    if (desired === 0) {
-      player.vx *= player.wasGrounded ? Math.pow(TUNING.groundFriction, dt * 60) : Math.pow(TUNING.airDrag, dt * 60);
-      if (Math.abs(player.vx) < 5) player.vx = 0;
-    }
-
-    const clampSpeed = player.wasGrounded ? activeMaxRun : TUNING.jumpCarrySpeedCap;
-    player.vx = Math.max(-clampSpeed, Math.min(clampSpeed, player.vx));
-
-    if (player.slideCooldown > 0) player.slideCooldown -= dt;
-
-    const wantsSlide = input.slidePressed || (input.down && desired !== 0);
-    if (wantsSlide && player.wasGrounded && !player.sliding && player.slideCooldown <= 0) {
-      beginSlide(desired || player.facing);
-    }
-
-    if (player.sliding) updateSlide(dt);
-
-    const canCoyoteJump = player.coyoteTimer > 0;
-    const canDoubleJump = player.jumpsUsed < 2 && !canCoyoteJump;
-
-    if (player.jumpBufferTimer > 0 && player.sliding) {
-      player.sliding = false;
-      player.slideTimer = 0;
-    }
-
-    if (player.jumpBufferTimer > 0 && (canCoyoteJump || canDoubleJump)) {
-      const isDouble = !canCoyoteJump;
-      player.jumpBufferTimer = 0;
-      player.grounded = false;
-      player.coyoteTimer = 0;
-      player.holdingJump = true;
-      player.jumpHoldTimer = TUNING.maxJumpHold;
-
-      if (isDouble) {
-        player.vy = TUNING.doubleJumpVy;
-        player.vx = Math.max(-TUNING.jumpCarrySpeedCap, Math.min(TUNING.jumpCarrySpeedCap, player.vx * TUNING.jumpHorizontalDamping));
-        player.vx += input.move * TUNING.doubleJumpHorizontalKick;
-        player.jumpsUsed = 2;
-        spawnPuff(player.x, player.y + player.r * 0.6, true);
-        sfx.double();
-      } else {
-        player.vy = TUNING.fullJumpVy;
-        player.vx = Math.max(-TUNING.jumpCarrySpeedCap, Math.min(TUNING.jumpCarrySpeedCap, player.vx * TUNING.jumpHorizontalDamping));
-        player.jumpsUsed = 1;
-        spawnPuff(player.x, player.y + player.r, false);
+    // Cosmetic hop on jump press.
+    if (input.jumpPressed || player.jumpBufferTimer > 0) {
+      if (player.hopOffset >= 0) {
+        player.hopVy = -480;
         sfx.jump();
+        spawnPuff(player.x, player.y + player.r, false);
       }
-
-      player.squash = -0.22;
+      player.jumpBufferTimer = 0;
+    }
+    if (player.hopOffset < 0 || player.hopVy !== 0) {
+      player.hopOffset += player.hopVy * dt;
+      player.hopVy += 2300 * dt;
+      if (player.hopOffset >= 0) {
+        if (player.hopVy > 200) sfx.land();
+        player.hopOffset = 0;
+        player.hopVy = 0;
+      }
     }
 
-    if (input.jumpReleased && player.vy < 0) {
-      player.vy *= TUNING.jumpCutMultiplier;
-      player.holdingJump = false;
-      player.jumpHoldTimer = 0;
+    const accel = TUNING.groundAccel;
+    const maxSpeed = TUNING.maxRun * 0.78;
+    const friction = Math.pow(TUNING.groundFriction, dt * 60);
+
+    player.vx += dx * accel * dt;
+    player.vy += dy * accel * dt;
+    if (dx === 0) player.vx *= friction;
+    if (dy === 0) player.vy *= friction;
+    if (Math.abs(player.vx) < 5) player.vx = 0;
+    if (Math.abs(player.vy) < 5) player.vy = 0;
+
+    const sp = Math.hypot(player.vx, player.vy);
+    if (sp > maxSpeed) {
+      player.vx *= maxSpeed / sp;
+      player.vy *= maxSpeed / sp;
     }
 
-    let gravityScale = 1;
-
-    if (input.jump && player.holdingJump && player.jumpHoldTimer > 0 && player.vy < 0) {
-      gravityScale = TUNING.jumpHoldGravityScale;
-      player.jumpHoldTimer -= dt;
-    } else {
-      player.holdingJump = false;
-    }
-
-    if (!player.grounded && Math.abs(player.vy) < TUNING.apexVelocityWindow) {
-      gravityScale = Math.min(gravityScale, TUNING.apexGravityScale);
-    }
-
-    player.vy += GRAVITY * gravityScale * dt;
-    player.vy = Math.min(player.vy, MAX_FALL);
-
+    // X-axis movement + collision.
     player.x += player.vx * dt;
     for (const p of platforms) {
-      if (playerPlatformCollision(p)) {
-        const leftPen = (player.x + player.r) - p.x;
-        const rightPen = (p.x + p.w) - (player.x - player.r);
-        const rY = playerRadiusY();
-        const topPen = (player.y + rY) - p.y;
-        const bottomPen = (p.y + p.h) - (player.y - rY);
-        const minPen = Math.min(leftPen, rightPen, topPen, bottomPen);
-        if (minPen === leftPen) player.x = p.x - player.r;
-        else if (minPen === rightPen) player.x = p.x + p.w + player.r;
-        player.vx = 0;
-      }
+      if (!rectCircleCollision(player.x, player.y, player.r, p)) continue;
+      if (player.vx > 0) player.x = p.x - player.r;
+      else if (player.vx < 0) player.x = p.x + p.w + player.r;
+      player.vx = 0;
     }
 
+    // Y-axis movement + collision.
     player.y += player.vy * dt;
     for (const p of platforms) {
-      if (playerPlatformCollision(p)) {
-        const rY = playerRadiusY();
-        const previousBottom = player.y - player.vy * dt + rY;
-        if (player.vy >= 0 && previousBottom <= p.y + 12) {
-          player.y = p.y - rY;
-          player.x += p.dx;
-          player.y += p.dy;
-          player.vy = 0;
-          player.grounded = true;
-          player.coyoteTimer = TUNING.coyote;
-          player.jumpsUsed = 0;
-          player.holdingJump = false;
-          player.jumpHoldTimer = 0;
-          touchCrumblePlatform(p);
-          if (!player.wasGrounded) {
-            player.squash = 0.26;
-            spawnPuff(player.x, player.y + player.r, false);
-            sfx.land();
-          }
-        } else if (player.vy < 0) {
-          player.y = p.y + p.h + rY;
-          player.vy = 0;
-          player.holdingJump = false;
-        }
-      }
+      if (!rectCircleCollision(player.x, player.y, player.r, p)) continue;
+      if (player.vy > 0) player.y = p.y - player.r;
+      else if (player.vy < 0) player.y = p.y + p.h + player.r;
+      player.vy = 0;
     }
 
-    if (!player.grounded && player.vy >= 0) tryLedgeGrab();
+    // Clamp Calvin to the road band — no falling off.
+    if (player.y < ROAD_TOP)    { player.y = ROAD_TOP;    if (player.vy < 0) player.vy = 0; }
+    if (player.y > ROAD_BOTTOM) { player.y = ROAD_BOTTOM; if (player.vy > 0) player.vy = 0; }
 
-    if (player.grounded) player.coyoteTimer = TUNING.coyote;
-
-    player.runTime += Math.abs(player.vx) * dt / 90;
+    player.grounded = true;
+    player.wasGrounded = true;
+    player.runTime += Math.hypot(player.vx, player.vy) * dt / 90;
     player.squash *= Math.pow(0.05, dt);
-    player.blink += dt;
 
     updatePuffs(dt);
     cameraFollow(dt);
     collectBones();
 
-    // Manhole death: stepping/falling into one of the open sidewalk holes.
-    for (const m of manholes) {
-      if (player.x > m.x && player.x < m.x + m.w && player.y + player.r > m.y - 4) {
-        die();
-        return;
-      }
-    }
-    // Safety net: if a player somehow ends up below the world, end the run.
-    if (player.y > WORLD.h + 220) die();
-
-    if (player.x > goal.x && player.x < goal.x + goal.w && player.y + player.r > goal.y && player.y - player.r < goal.y + goal.h) {
+    if (player.x > goal.x && player.x < goal.x + goal.w && Math.abs(player.y - (goal.y + goal.h / 2)) < goal.h) {
       win();
     }
 
@@ -613,10 +480,9 @@ import { WORLD, LEVEL } from "./levels.js";
 
   function updateHud(extra) {
     const dist = Math.max(0, Math.floor(player.x / 10));
-    const slideText = player.sliding ? " · Sliding" : "";
     const bestText = bestDistance > 0 ? ` · Best: ${bestDistance}m` : "";
     const extraText = extra ? ` · ${extra}` : "";
-    hud.textContent = `Bones: ${bonesCollected}/${bones.length} · Distance: ${dist}m${slideText}${bestText}${extraText}`;
+    hud.textContent = `Bones: ${bonesCollected}/${bones.length} · Distance: ${dist}m${bestText}${extraText}`;
   }
 
   function collectBones() {
@@ -879,7 +745,7 @@ import { WORLD, LEVEL } from "./levels.js";
 
     ctx.save();
     ctx.translate(-cameraX, -cameraY);
-    drawManholes();
+    drawRoad();
     drawPlatforms();
     drawBones();
     drawGoal();
@@ -950,8 +816,8 @@ import { WORLD, LEVEL } from "./levels.js";
       { x: 4570, w: 320, color: "#6fb874", sign: "BARK!",   signColor: "#fff" },
       { x: 4950, w: 240, color: "#c46a8e", sign: "GOAL",    signColor: "#fff7a5" }
     ];
-    const facadeTop = 320;
-    const facadeBottom = 600;
+    const facadeTop = 200;
+    const facadeBottom = 500;
     for (const f of fronts) {
       // Brick body
       ctx.fillStyle = f.color;
@@ -982,11 +848,6 @@ import { WORLD, LEVEL } from "./levels.js";
     }
     ctx.restore();
 
-    // Sidewalk asphalt band (just a tint behind the ground platforms)
-    ctx.save();
-    ctx.fillStyle = "rgba(60, 56, 80, 0.18)";
-    ctx.fillRect(0, 750, W, 80);
-    ctx.restore();
   }
 
   function drawScanlines() {
@@ -998,26 +859,37 @@ import { WORLD, LEVEL } from "./levels.js";
     ctx.restore();
   }
 
-  function drawManholes() {
-    for (const m of manholes) {
-      // Dark opening below the sidewalk line.
-      ctx.save();
-      const cx = m.x + m.w / 2;
-      ctx.fillStyle = "#0a0a12";
-      ctx.beginPath();
-      ctx.ellipse(cx, m.y + 6, m.w / 2 + 4, 12, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Grate hint on the back rim
-      ctx.strokeStyle = "rgba(180,180,200,0.35)";
-      ctx.lineWidth = 2;
-      for (let i = -1; i <= 1; i++) {
-        ctx.beginPath();
-        ctx.moveTo(m.x + 8, m.y + 4 + i * 3);
-        ctx.lineTo(m.x + m.w - 8, m.y + 4 + i * 3);
-        ctx.stroke();
-      }
-      ctx.restore();
+  function drawRoad() {
+    // The full asphalt strip Calvin can walk on.
+    const top = ROAD_TOP - 30;
+    const bot = ROAD_BOTTOM + 30;
+    ctx.save();
+    // Sidewalk above
+    ctx.fillStyle = "#a8a4b8";
+    ctx.fillRect(0, top - 40, WORLD.w, 40);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, top - 4, WORLD.w, 4);
+    // Road body
+    ctx.fillStyle = "#3a3548";
+    ctx.fillRect(0, top, WORLD.w, bot - top);
+    // Curb stripe at top and bottom
+    ctx.fillStyle = "#f3e5a8";
+    ctx.fillRect(0, top, WORLD.w, 3);
+    ctx.fillRect(0, bot - 3, WORLD.w, 3);
+    // Dashed center lane lines (2 lanes -> 1 center line per half)
+    ctx.fillStyle = "rgba(255, 240, 180, 0.85)";
+    const midA = top + (bot - top) * 0.34;
+    const midB = top + (bot - top) * 0.67;
+    for (let x = 0; x < WORLD.w; x += 60) {
+      ctx.fillRect(x, midA, 32, 3);
+      ctx.fillRect(x, midB, 32, 3);
     }
+    // Sidewalk below
+    ctx.fillStyle = "#a8a4b8";
+    ctx.fillRect(0, bot, WORLD.w, 40);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, bot, WORLD.w, 4);
+    ctx.restore();
   }
 
   function drawBones() {
@@ -1288,9 +1160,8 @@ import { WORLD, LEVEL } from "./levels.js";
   let walkPhase = 0;
   let lastWalkTick = 0;
   function pickLegsSprite(p) {
-    if (p.sliding) return SPRITES.layingdown;
-    if (!p.grounded) return SPRITES.jump;
-    if (input.move === 0) return SPRITES.standing;
+    if ((p.hopOffset || 0) < -2) return SPRITES.jump;
+    if (input.move === 0 && !input.up && !input.down) return SPRITES.standing;
     const now = performance.now();
     if (now - lastWalkTick > 140) {
       walkPhase++;
@@ -1335,23 +1206,21 @@ import { WORLD, LEVEL } from "./levels.js";
       return;
     }
 
+    const drawY0 = p.y + (p.hopOffset || 0);
+
     const legsSprite = pickLegsSprite(p);
     if (ready(legsSprite)) {
       ctx.save();
-      const airborne = !p.grounded && !p.sliding;
-      const legBob = p.grounded && !p.sliding ? Math.sin(p.runTime * (8.2 + p.momentum * 2.2)) * Math.min(1, speed / TUNING.maxRun) : 0;
-      const legSquashY = p.sliding ? 0.62 : 1;
-      const legSquashX = p.sliding ? 1.18 : 1;
+      const airborne = (p.hopOffset || 0) < -2;
+      const legBob = !airborne ? Math.sin(p.runTime * 8.6) * Math.min(1, Math.hypot(p.vx, p.vy) / TUNING.maxRun) : 0;
 
       if (airborne) {
-        const jumpTilt = Math.max(-0.16, Math.min(0.16, p.vy / 2200)) * facing;
-        ctx.translate(p.x, p.y + 6);
+        ctx.translate(p.x, drawY0 + 6);
         ctx.scale(facing, 1);
-        ctx.rotate(jumpTilt);
         ctx.drawImage(legsSprite, -48, -42, 96, 96);
       } else {
-        ctx.translate(p.x, p.y + 4 + Math.abs(legBob) * 1.5);
-        ctx.scale(facing * legSquashX, legSquashY);
+        ctx.translate(p.x, drawY0 + 4 + Math.abs(legBob) * 1.5);
+        ctx.scale(facing, 1);
         ctx.rotate(legBob * 0.035);
         ctx.drawImage(legsSprite, -48, -44, 96, 96);
       }
@@ -1360,19 +1229,19 @@ import { WORLD, LEVEL } from "./levels.js";
 
     if (ready(SPRITES.body)) {
       ctx.save();
-      ctx.translate(p.x, p.y);
+      ctx.translate(p.x, drawY0);
       ctx.scale(facing * bodyScaleX, bodyScaleY);
       ctx.rotate(tilt);
 
-      let bob = 0;
-      if (p.grounded && !p.sliding) bob = Math.sin(p.runTime * (7.2 + p.momentum * 2.0)) * Math.min(2.4, speed / 280);
+      const speedTotal = Math.hypot(p.vx, p.vy);
+      let bob = Math.sin(p.runTime * 7.4) * Math.min(2.4, speedTotal / 280);
 
-      const drawW = p.sliding ? 101 : 108;
-      const drawH = p.sliding ? 62 : 85;
+      const drawW = 108;
+      const drawH = 85;
       const drawX = -drawW / 2;
-      const drawY = p.sliding ? -12 : -34 + bob;
+      const drawYBody = -34 + bob;
 
-      ctx.drawImage(SPRITES.body, drawX, drawY, drawW, drawH);
+      ctx.drawImage(SPRITES.body, drawX, drawYBody, drawW, drawH);
       ctx.restore();
     } else {
       ctx.save();
