@@ -1075,13 +1075,19 @@ import { WORLD, LEVEL } from "./levels.js";
     ctx.restore();
   }
 
-  function pickLegsSprite(p, speed) {
+  let walkPhase = 0;
+  let lastWalkTick = 0;
+  function pickLegsSprite(p) {
     if (p.sliding) return SPRITES.layingdown;
     if (!p.grounded) return SPRITES.jump;
-    if (speed < 30) return SPRITES.standing;
+    if (input.move === 0) return SPRITES.standing;
+    const now = performance.now();
+    if (now - lastWalkTick > 140) {
+      walkPhase++;
+      lastWalkTick = now;
+    }
     const walkCycle = [SPRITES.walkA, SPRITES.walkB, SPRITES.walkA, SPRITES.walkC];
-    const frame = Math.floor(p.runTime * 0.4) % walkCycle.length;
-    return walkCycle[frame];
+    return walkCycle[walkPhase % walkCycle.length];
   }
 
   function drawPlayer() {
@@ -1119,7 +1125,7 @@ import { WORLD, LEVEL } from "./levels.js";
       return;
     }
 
-    const legsSprite = pickLegsSprite(p, speed);
+    const legsSprite = pickLegsSprite(p);
     if (ready(legsSprite)) {
       ctx.save();
       const airborne = !p.grounded && !p.sliding;
