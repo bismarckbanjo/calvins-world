@@ -34,26 +34,27 @@ export const LEVEL = {
     { type: "static", kind: "bench",  x: 4460, y: 620, w: 140, h: 40, top: 40,  solidFromBelow: true },
 
     // ---------- Elevated platforms (one-way landings) ----------
+    // Footprints span the full road band so a jumped-from-anywhere lands on them.
     // Awnings: easy single-jump reach.
-    { type: "static", kind: "awning",     x: 200,  y: 600, w: 180, h: 24, top: 80,  solidFromBelow: false },
-    { type: "static", kind: "awning",     x: 580,  y: 580, w: 180, h: 24, top: 80,  solidFromBelow: false },
-    { type: "static", kind: "windowsill", x: 880,  y: 600, w: 110, h: 18, top: 110, solidFromBelow: false },
+    { type: "static", kind: "awning",     x: 200,  y: 540, w: 180, h: 160, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "awning",     x: 580,  y: 540, w: 180, h: 160, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "windowsill", x: 880,  y: 540, w: 110, h: 160, top: 110, solidFromBelow: false },
     // First rooftop — needs a double jump (or a step from the window sill below)
-    { type: "static", kind: "rooftop",    x: 1120, y: 580, w: 360, h: 30, top: 170, solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 1120, y: 540, w: 360, h: 160, top: 170, solidFromBelow: false },
 
-    { type: "static", kind: "windowsill", x: 1880, y: 580, w: 110, h: 18, top: 110, solidFromBelow: false },
-    { type: "static", kind: "rooftop",    x: 2080, y: 600, w: 320, h: 30, top: 170, solidFromBelow: false },
+    { type: "static", kind: "windowsill", x: 1880, y: 540, w: 110, h: 160, top: 110, solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 2080, y: 540, w: 320, h: 160, top: 170, solidFromBelow: false },
 
-    { type: "static", kind: "awning",     x: 2520, y: 580, w: 180, h: 24, top: 90,  solidFromBelow: false },
-    { type: "static", kind: "rooftop",    x: 2780, y: 600, w: 320, h: 30, top: 170, solidFromBelow: false },
+    { type: "static", kind: "awning",     x: 2520, y: 540, w: 180, h: 160, top: 90,  solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 2780, y: 540, w: 320, h: 160, top: 170, solidFromBelow: false },
 
-    { type: "static", kind: "windowsill", x: 3200, y: 580, w: 110, h: 18, top: 110, solidFromBelow: false },
-    { type: "static", kind: "rooftop",    x: 3500, y: 600, w: 380, h: 30, top: 180, solidFromBelow: false },
+    { type: "static", kind: "windowsill", x: 3200, y: 540, w: 110, h: 160, top: 110, solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 3500, y: 540, w: 380, h: 160, top: 180, solidFromBelow: false },
 
-    { type: "static", kind: "awning",     x: 3960, y: 580, w: 180, h: 24, top: 80,  solidFromBelow: false },
-    { type: "static", kind: "rooftop",    x: 4200, y: 600, w: 380, h: 30, top: 180, solidFromBelow: false },
+    { type: "static", kind: "awning",     x: 3960, y: 540, w: 180, h: 160, top: 80,  solidFromBelow: false },
+    { type: "static", kind: "rooftop",    x: 4200, y: 540, w: 380, h: 160, top: 180, solidFromBelow: false },
 
-    { type: "static", kind: "awning",     x: 4640, y: 600, w: 200, h: 24, top: 90,  solidFromBelow: false }
+    { type: "static", kind: "awning",     x: 4640, y: 540, w: 200, h: 160, top: 90,  solidFromBelow: false }
   ],
 
   bones: [

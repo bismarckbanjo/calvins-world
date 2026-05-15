@@ -136,6 +136,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
   let bonesCollected = 0;
   const ROAD_TOP = (ROAD && ROAD.top) || 540;
   const ROAD_BOTTOM = (ROAD && ROAD.bottom) || 700;
+  const ROAD_CENTER = (ROAD_TOP + ROAD_BOTTOM) / 2;
 
   let DPR = 1, W = 0, H = 0, scale = 1;
   let cameraX = 0, cameraY = 0;
@@ -1007,7 +1008,9 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       const baseY = p.y + (p.active ? 0 : p.dropY);
       const alpha = p.active ? 1 : Math.max(0, p.respawnTimer / p.respawnDelay) * 0.35;
       const elevated = !p.solidFromBelow;
-      const drawY = elevated ? baseY - p.top : baseY;
+      // Elevated platforms are anchored to the road center so a jump from any
+      // lane meets them at the same visual height.
+      const drawY = elevated ? ROAD_CENTER - p.top : baseY;
 
       ctx.save();
       ctx.globalAlpha = alpha;
@@ -1016,7 +1019,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       if (elevated) {
         ctx.fillStyle = "rgba(15, 12, 25, 0.18)";
         ctx.beginPath();
-        ctx.ellipse(p.x + p.w / 2, baseY + 8, p.w / 2, 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(p.x + p.w / 2, ROAD_BOTTOM + 10, p.w / 2, 10, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -1032,9 +1035,13 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
 
   function drawBoxPlatform(p, drawY) {
     const pal = KIND_PALETTE[p.kind] || KIND_PALETTE.rooftop;
-    // Shadow
+    // Elevated platforms get a thin visual slab regardless of the XY footprint
+    // (the footprint is wider for forgiving landing detection).
+    const elevated = p.solidFromBelow === false;
+    const drawH = elevated ? (p.kind === "windowsill" ? 18 : (p.kind === "awning" ? 24 : 30)) : p.h;
+
     ctx.fillStyle = "rgba(15,23,42,.14)";
-    roundRect(p.x + 9, drawY + 14, p.w, p.h, p.kind === "ground" ? 6 : 12);
+    roundRect(p.x + 9, drawY + 14, p.w, drawH, p.kind === "ground" ? 6 : 12);
     ctx.fill();
 
     let body = pal.body, top = pal.top;
@@ -1044,7 +1051,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     }
 
     ctx.fillStyle = body;
-    roundRect(p.x, drawY, p.w, p.h, p.kind === "ground" ? 4 : 12);
+    roundRect(p.x, drawY, p.w, drawH, p.kind === "ground" ? 4 : 12);
     ctx.fill();
     ctx.fillStyle = top;
     roundRect(p.x, drawY, p.w, p.kind === "windowsill" ? 6 : 10, p.kind === "ground" ? 4 : 8);
@@ -1055,10 +1062,9 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       for (let x = p.x + 22; x < p.x + p.w - 20; x += 60) ctx.fillRect(x, drawY + 16, 22, 2);
     }
 
-    // Awning: candy-stripe red/white
     if (p.kind === "awning") {
       ctx.fillStyle = "rgba(255,255,255,0.92)";
-      for (let x = p.x; x < p.x + p.w; x += 24) ctx.fillRect(x, drawY + 8, 12, p.h - 8);
+      for (let x = p.x; x < p.x + p.w; x += 24) ctx.fillRect(x, drawY + 8, 12, drawH - 8);
     }
   }
 
@@ -1278,7 +1284,10 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
       return;
     }
 
-    const drawY0 = p.y - (p.z || 0);
+    // While airborne or on a platform, anchor visual Y to road center so the
+    // jump arc aligns with the elevated platforms.
+    const airborneOrUp = (p.z || 0) > 0.5 || p.standingOn !== null;
+    const drawY0 = airborneOrUp ? ROAD_CENTER - (p.z || 0) : p.y;
 
     const legsSprite = pickLegsSprite(p);
     if (ready(legsSprite)) {
@@ -1372,6 +1381,7 @@ import { WORLD, LEVEL, ROAD } from "./levels.js";
     requestAnimationFrame(loop);
   }
 
+  window.__cw = { player, platforms, input };
   resize();
   requestAnimationFrame(loop);
 })();
